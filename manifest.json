@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Funda Reacties",
+  "version": "0.1.0",
+  "description": "Reageer op woningen op Funda.nl — lees en deel ervaringen met andere huizenzoekers.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://www.funda.nl/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.funda.nl/detail/*",
+        "https://www.funda.nl/koop/*",
+        "https://www.funda.nl/huur/*"
+      ],
+      "css": ["styles/panel.css"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
+  }
+}

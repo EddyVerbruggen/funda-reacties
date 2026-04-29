@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      font-family: "Nunito Sans", -apple-system, sans-serif;
+      color: #2c2416;
+      background: #f7f5f2;
+    }
+
+    .popup {
+      padding: 20px;
+    }
+
+    .popup__header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .popup__logo {
+      font-size: 28px;
+    }
+
+    .popup__title {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .popup__subtitle {
+      font-size: 12px;
+      color: #8a7e6e;
+      font-weight: 400;
+    }
+
+    .popup__status {
+      padding: 12px 14px;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .popup__status--active {
+      background: #e6f4ec;
+      color: #2d6b45;
+      border: 1px solid #b8dfc8;
+    }
+
+    .popup__status--inactive {
+      background: #fef3ec;
+      color: #9b5623;
+      border: 1px solid #f0d4b8;
+    }
+
+    .popup__stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .stat {
+      background: #fff;
+      border: 1px solid #e2ddd5;
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .stat__value {
+      font-size: 22px;
+      font-weight: 700;
+      color: #e86c2a;
+    }
+
+    .stat__label {
+      font-size: 11px;
+      color: #8a7e6e;
+      margin-top: 2px;
+    }
+
+    .popup__section {
+      margin-bottom: 14px;
+    }
+
+    .popup__section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #8a7e6e;
+      margin-bottom: 6px;
+    }
+
+    .popup__info {
+      font-size: 13px;
+      line-height: 1.5;
+      color: #5c5245;
+    }
+
+    .popup__footer {
+      text-align: center;
+      padding-top: 12px;
+      border-top: 1px solid #e2ddd5;
+      font-size: 11px;
+      color: #8a7e6e;
+    }
+
+    .popup__footer a {
+      color: #e86c2a;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="popup">
+    <div class="popup__header">
+      <span class="popup__logo">🏠💬</span>
+      <div>
+        <div class="popup__title">Funda Reacties</div>
+        <div class="popup__subtitle">v0.1.0 · community edition</div>
+      </div>
+    </div>
+
+    <div class="popup__status popup__status--active" id="status">
+      ✅ Actief — ga naar een woningpagina op Funda om reacties te zien en te plaatsen.
+    </div>
+
+    <div class="popup__stats">
+      <div class="stat">
+        <div class="stat__value" id="stat-comments">—</div>
+        <div class="stat__label">Reacties geplaatst</div>
+      </div>
+      <div class="stat">
+        <div class="stat__value" id="stat-properties">—</div>
+        <div class="stat__label">Woningen bekeken</div>
+      </div>
+    </div>
+
+    <div class="popup__section">
+      <div class="popup__section-title">Hoe werkt het?</div>
+      <div class="popup__info">
+        Open een woningpagina op funda.nl. Onderaan de pagina verschijnt het reactiepaneel.
+        Je kunt anoniem reageren met tekst of emoji's. Alle reacties zijn zichtbaar voor iedereen
+        met deze extensie.
+      </div>
+    </div>
+
+    <div class="popup__footer">
+      Door de community, voor de community
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

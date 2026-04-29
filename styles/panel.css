@@ -1,0 +1,397 @@
+/* ==========================================================================
+   Funda Reacties — Injected Panel Styles
+   Scoped under #funda-reacties-root to avoid conflicts with Funda's CSS
+   ========================================================================== */
+
+#funda-reacties-root {
+  --fr-bg: #ffffff;
+  --fr-bg-alt: #f7f5f2;
+  --fr-bg-hover: #f0ede8;
+  --fr-border: #e2ddd5;
+  --fr-text: #2c2416;
+  --fr-text-muted: #8a7e6e;
+  --fr-accent: #e86c2a;
+  --fr-accent-hover: #d45e1f;
+  --fr-accent-light: #fef3ec;
+  --fr-upvote: #4a9b6e;
+  --fr-downvote: #c4534a;
+  --fr-radius: 10px;
+  --fr-radius-sm: 6px;
+  --fr-shadow: 0 1px 4px rgba(44, 36, 22, 0.08);
+  --fr-shadow-lg: 0 4px 20px rgba(44, 36, 22, 0.12);
+  --fr-font: "Nunito Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  font-family: var(--fr-font);
+  color: var(--fr-text);
+  line-height: 1.5;
+  box-sizing: border-box;
+  margin-top: 0;
+  margin-bottom: 16px;
+  padding: 0;
+  width: 100%;
+}
+
+#funda-reacties-root *,
+#funda-reacties-root *::before,
+#funda-reacties-root *::after {
+  box-sizing: border-box;
+}
+
+/* ---- Container ---- */
+.fr-container {
+  background: var(--fr-bg);
+  border: 1px solid var(--fr-border);
+  border-radius: var(--fr-radius);
+  box-shadow: var(--fr-shadow);
+  overflow: hidden;
+}
+
+/* ---- Header ---- */
+.fr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--fr-border);
+  background: var(--fr-bg-alt);
+}
+
+.fr-header__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--fr-text);
+}
+
+.fr-header__icon {
+  font-size: 20px;
+}
+
+.fr-header__count {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-text-muted);
+  background: var(--fr-bg);
+  padding: 2px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--fr-border);
+}
+
+/* ---- Quick Reactions Bar ---- */
+.fr-quick-reactions {
+  display: flex;
+  gap: 5px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--fr-border);
+  flex-wrap: wrap;
+}
+
+.fr-emoji-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--fr-border);
+  border-radius: 20px;
+  background: var(--fr-bg);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s ease;
+  color: var(--fr-text);
+  user-select: none;
+}
+
+.fr-emoji-btn:hover {
+  background: var(--fr-bg-hover);
+  border-color: var(--fr-accent);
+}
+
+.fr-emoji-btn.active {
+  background: var(--fr-accent-light);
+  border-color: var(--fr-accent);
+}
+
+.fr-emoji-btn__count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-text-muted);
+}
+
+/* ---- Insights (auto-generated data) ---- */
+.fr-insights {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--fr-border);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fr-insight-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: var(--fr-bg-alt);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-text-muted);
+  border: 1px solid var(--fr-border);
+}
+
+.fr-insight-chip__icon {
+  font-size: 14px;
+}
+
+/* ---- Comment Input ---- */
+.fr-compose {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--fr-border);
+}
+
+.fr-compose__wrapper {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.fr-compose__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--fr-accent-light);
+  color: var(--fr-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.fr-compose__input-group {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fr-compose__textarea {
+  width: 100%;
+  min-height: 38px;
+  max-height: 160px;
+  padding: 8px 10px;
+  border: 1px solid var(--fr-border);
+  border-radius: var(--fr-radius-sm);
+  font-family: var(--fr-font);
+  font-size: 13px;
+  color: var(--fr-text);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s ease;
+  background: var(--fr-bg);
+}
+
+.fr-compose__textarea::placeholder {
+  color: var(--fr-text-muted);
+  font-size: 12px;
+}
+
+.fr-compose__textarea:focus {
+  border-color: var(--fr-accent);
+  box-shadow: 0 0 0 3px var(--fr-accent-light);
+}
+
+.fr-compose__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.fr-compose__hint {
+  font-size: 10px;
+  color: var(--fr-text-muted);
+  line-height: 1.3;
+}
+
+.fr-compose__submit {
+  padding: 7px 18px;
+  background: var(--fr-accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--fr-radius-sm);
+  font-family: var(--fr-font);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.fr-compose__submit:hover {
+  background: var(--fr-accent-hover);
+}
+
+.fr-compose__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Comments List ---- */
+.fr-comments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fr-comment {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--fr-border);
+  transition: background 0.1s ease;
+}
+
+.fr-comment:last-child {
+  border-bottom: none;
+}
+
+.fr-comment:hover {
+  background: var(--fr-bg-alt);
+}
+
+.fr-comment__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.fr-comment__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.fr-comment__name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fr-text);
+}
+
+.fr-comment__time {
+  font-size: 12px;
+  color: var(--fr-text-muted);
+}
+
+.fr-comment__body {
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0 0 8px 36px;
+  color: var(--fr-text);
+}
+
+.fr-comment__footer {
+  display: flex;
+  gap: 12px;
+  margin-left: 36px;
+}
+
+.fr-vote-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--fr-font);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-text-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.fr-vote-btn:hover {
+  background: var(--fr-bg-hover);
+}
+
+.fr-vote-btn--up:hover,
+.fr-vote-btn--up.active {
+  color: var(--fr-upvote);
+}
+
+.fr-vote-btn--down:hover,
+.fr-vote-btn--down.active {
+  color: var(--fr-downvote);
+}
+
+/* ---- Empty State ---- */
+.fr-empty {
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--fr-text-muted);
+}
+
+.fr-empty__icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.fr-empty__text {
+  font-size: 14px;
+  margin: 0;
+}
+
+/* ---- Footer ---- */
+.fr-footer {
+  padding: 8px 14px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--fr-text-muted);
+  background: var(--fr-bg-alt);
+  white-space: nowrap;
+}
+
+.fr-footer a {
+  color: var(--fr-accent);
+  text-decoration: none;
+}
+
+.fr-footer a:hover {
+  text-decoration: underline;
+}
+
+/* ---- Loading Skeleton ---- */
+.fr-skeleton {
+  padding: 16px 20px;
+}
+
+.fr-skeleton__line {
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--fr-bg-alt) 25%, var(--fr-bg-hover) 50%, var(--fr-bg-alt) 75%);
+  background-size: 200% 100%;
+  animation: fr-shimmer 1.5s infinite;
+  margin-bottom: 10px;
+}
+
+.fr-skeleton__line:nth-child(1) { width: 60%; }
+.fr-skeleton__line:nth-child(2) { width: 90%; }
+.fr-skeleton__line:nth-child(3) { width: 45%; }
+
+@keyframes fr-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ---- Google Font import ---- */
+@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700&display=swap');
