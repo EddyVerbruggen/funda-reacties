@@ -21,11 +21,142 @@
     return path.replace(/\//g, "_").replace(/^_/, "");
   }
 
-  /** Get the property address from the page for display */
+  /**
+   * Get the property address from the page, normalized as "Straat 12, Stad".
+   *
+   * Funda's H1 and its surrounding container include the postcode, city, and
+   * wijk link. The DOM structure varies (sometimes text nodes, sometimes nested
+   * spans). Instead of depending on a specific DOM shape, we take the full
+   * textContent and strip everything from the first Dutch postcode pattern
+   * ("1234 AB") onwards. This reliably isolates the "Straatnaam 12" part.
+   */
   function getPropertyAddress() {
-    const h1 = document.querySelector('h1');
-    if (h1) return h1.textContent.trim();
+    const h1 = document.querySelector("h1");
+    let streetPart = "";
+
+    if (h1) {
+      const raw = (h1.textContent || "").trim();
+      // Cut at the first Dutch postcode pattern ("3863 AS", "1012 AB", etc.)
+      const postcodeIdx = raw.search(/\d{4}\s?[A-Z]{2}/);
+      if (postcodeIdx > 0) {
+        streetPart = raw.slice(0, postcodeIdx).trim();
+      } else {
+        // No postcode found — likely the H1 really only contains the street.
+        streetPart = raw;
+      }
+    }
+
+    // City from the URL (more reliable than scraping)
+    const cityMatch = location.pathname.match(/\/(?:detail\/)?(?:koop|huur)\/([^/]+)\//);
+    const cityTitle = cityMatch ? titleCase(decodeURIComponent(cityMatch[1])) : "";
+
+    if (streetPart && cityTitle) return `${streetPart}, ${cityTitle}`;
+    if (streetPart) return streetPart;
+    if (cityTitle) return cityTitle;
     return document.title.replace(/ \[funda\].*/, "").trim();
+  }
+
+  /** Get the canonical URL for the current property (without query/hash) */
+  function getPropertyUrl() {
+    return location.origin + location.pathname.replace(/\/+$/, "") + "/";
+  }
+
+  /**
+   * Extract location signals (street, neighborhood, city) from the page + URL.
+   * These are best-effort; missing fields are simply omitted.
+   *
+   * Used for two purposes:
+   *  - tag every new comment with the location of the property it was posted on
+   *  - look up nearby properties when this property has no comments yet
+   */
+  function getPropertyLocation() {
+    const loc = {};
+
+    // --- City from URL ---
+    // Funda paths: /koop/<city>/huis-..., /huur/<city>/..., /detail/koop/<city>/...
+    const cityMatch = location.pathname.match(/\/(?:detail\/)?(?:koop|huur)\/([^/]+)\//);
+    if (cityMatch) {
+      loc.city = decodeURIComponent(cityMatch[1]).toLowerCase();
+    }
+
+    // --- Street from H1 ---
+    // Same postcode-stripping trick as getPropertyAddress: take h1.textContent
+    // and cut everything from the postcode pattern onwards, then strip the
+    // house number to get just the street name.
+    const h1 = document.querySelector("h1");
+    if (h1) {
+      const raw = (h1.textContent || "").trim();
+      const postcodeIdx = raw.search(/\d{4}\s?[A-Z]{2}/);
+      const streetWithNumber = postcodeIdx > 0 ? raw.slice(0, postcodeIdx).trim() : raw;
+      // Drop trailing house number (and possible suffix like 12a, 12-3)
+      const street = streetWithNumber.replace(/\s+\d+[a-zA-Z]?(?:[-/]\d+[a-zA-Z]?)?\s*$/, "").trim();
+      if (street) loc.street = street.toLowerCase();
+    }
+
+    // --- Neighborhood (wijk) from the address block under the H1 ---
+    // Funda renders the wijk as a link near the H1, but the href format varies:
+    //   - Relative: /koop/nijkerk/corlaer/
+    //   - Absolute: https://www.funda.nl/informatie/nijkerk/corlaer
+    //   - Search link: /koop/nijkerk/corlaer/
+    //
+    // Strategy: look for links near the H1 whose last path segment is a
+    // plausible wijk slug (not a listing, not the city itself, not a generic
+    // page). We also check for /informatie/<city>/<wijk> which Funda uses
+    // for neighbourhood info pages.
+    try {
+      const candidateLinks = [];
+      // Scope 1: links inside the H1 element itself (Funda puts the wijk link here)
+      if (h1) {
+        candidateLinks.push(...h1.querySelectorAll("a[href]"));
+      }
+      // Scope 2: links in the H1's parent block
+      if (h1 && h1.parentElement) {
+        candidateLinks.push(...h1.parentElement.querySelectorAll("a[href]"));
+      }
+
+      for (const a of candidateLinks) {
+        const href = a.getAttribute("href") || "";
+
+        // Normalize: strip origin for absolute URLs so we can parse the path
+        let path = href;
+        try {
+          const u = new URL(href, location.origin);
+          path = u.pathname;
+        } catch (e) { /* keep raw href */ }
+        // Ensure no trailing slash for consistent splitting
+        path = path.replace(/\/+$/, "");
+        const segments = path.split("/").filter(Boolean);
+
+        // Pattern 1: /koop/<city>/<wijk> or /huur/<city>/<wijk>
+        if (
+          segments.length === 3 &&
+          (segments[0] === "koop" || segments[0] === "huur")
+        ) {
+          const [, hrefCity, hrefSlug] = segments;
+          if (loc.city && hrefCity.toLowerCase() !== loc.city) continue;
+          if (/^huis-|^appartement-|^woonhuis-/.test(hrefSlug)) continue;
+          loc.neighborhood = hrefSlug.toLowerCase();
+          break;
+        }
+
+        // Pattern 2: /informatie/<city>/<wijk>  (neighbourhood info pages)
+        if (
+          segments.length === 3 &&
+          segments[0] === "informatie"
+        ) {
+          const [, hrefCity, hrefSlug] = segments;
+          if (loc.city && hrefCity.toLowerCase() !== loc.city) continue;
+          loc.neighborhood = hrefSlug.toLowerCase();
+          break;
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    dbg("getPropertyLocation:", JSON.stringify(loc));
+
+    // Region / province are intentionally not extracted: not reliably available
+    // on the page, and the user explicitly scoped this iteration to street/wijk/city.
+    return loc;
   }
 
   /** Time-ago formatter */
@@ -68,6 +199,143 @@
   // In production, replace this with real API calls to your backend.
 
   const STORAGE_KEY = "funda_reacties_";
+  const DEMO_SEED_KEY = "funda_reacties__demo_seeded__";
+
+  // Toggle the seeded fake-neighbour data. Set to false once a real backend is
+  // wired up so we don't pollute storage with mock entries.
+  const DEMO_MODE = true;
+
+  // Verbose console logging for the buurt-aggregatie. Leave on while iterating
+  // on the matching logic; flip off before shipping.
+  const DEBUG = true;
+  function dbg(...args) { if (DEBUG) console.log("[Funda Reacties]", ...args); }
+
+  /**
+   * Seed a few fake "neighbour" properties so the buurt-aggregatie has
+   * something to show even on a fresh install. Seeds are tied to the *current*
+   * property's location (street/neighborhood/city) so the matcher actually
+   * lights up. Idempotent per (city, neighborhood, street) tuple via a sentinel.
+   */
+  function seedDemoNeighbours(currentPropertyId, currentLocation) {
+    if (!DEMO_MODE) return;
+    if (!currentLocation || !currentLocation.city) return;
+
+    const sentinel =
+      DEMO_SEED_KEY +
+      [currentLocation.city, currentLocation.neighborhood || "-", currentLocation.street || "-"].join("|");
+    if (localStorage.getItem(sentinel)) return;
+
+    const cityTitle = titleCase(currentLocation.city);
+    const streetTitle = currentLocation.street ? titleCase(currentLocation.street) : null;
+    const wijkTitle = currentLocation.neighborhood ? titleCase(currentLocation.neighborhood) : null;
+
+    const seeds = [];
+
+    // 1. Same street neighbour (only if we know the street)
+    if (streetTitle) {
+      const houseNum = Math.floor(Math.random() * 80) + 2;
+      seeds.push({
+        id: `seed_street_${currentLocation.city}_${currentLocation.street}`,
+        address: `${streetTitle} ${houseNum}`,
+        url: `https://www.funda.nl/koop/${currentLocation.city}/huis-99000001-${currentLocation.street}-${houseNum}/`,
+        location: {
+          city: currentLocation.city,
+          neighborhood: currentLocation.neighborhood,
+          street: currentLocation.street,
+        },
+        comments: [
+          {
+            id: "seed_street_c1",
+            name: "Buurtbewoner",
+            text: "Een paar huizen verderop heb ik bezichtigd — vergelijkbare lay-out, maar de tuin lag op het noorden. Let dus goed op de oriantatie als je hier komt kijken.",
+            time: new Date(Date.now() - 86400000 * 4).toISOString(),
+            upvotes: 9,
+            downvotes: 0,
+          },
+        ],
+      });
+    }
+
+    // 2. Same wijk neighbour (only if we know the wijk)
+    if (wijkTitle) {
+      seeds.push({
+        id: `seed_wijk_${currentLocation.city}_${currentLocation.neighborhood}`,
+        address: `Voorbeeldlaan 12, ${cityTitle}`,
+        url: `https://www.funda.nl/koop/${currentLocation.city}/huis-99000002-voorbeeldlaan-12/`,
+        location: {
+          city: currentLocation.city,
+          neighborhood: currentLocation.neighborhood,
+        },
+        comments: [
+          {
+            id: "seed_wijk_c1",
+            name: "Wijkkenner",
+            text: `Mooie wijk, ${wijkTitle}. ’s Avonds rustig en de basisschool om de hoek heeft een goede reputatie. Wel weinig parkeerplekken in het weekend.`,
+            time: new Date(Date.now() - 86400000 * 8).toISOString(),
+            upvotes: 14,
+            downvotes: 1,
+          },
+        ],
+      });
+    }
+
+    // 3. Same city neighbour (always)
+    seeds.push({
+      id: `seed_city_${currentLocation.city}`,
+      address: `Stadshof 5, ${cityTitle}`,
+      url: `https://www.funda.nl/koop/${currentLocation.city}/huis-99000003-stadshof-5/`,
+      location: {
+        city: currentLocation.city,
+      },
+      comments: [
+        {
+          id: "seed_city_c1",
+          name: "Vastgoedfan",
+          text: `Algemene tip voor ${cityTitle}: kijk goed naar de WOZ-waarde versus vraagprijs. Verschillen lopen hier soms flink uit elkaar tussen wijken.`,
+          time: new Date(Date.now() - 86400000 * 14).toISOString(),
+          upvotes: 6,
+          downvotes: 0,
+        },
+      ],
+    });
+
+    // Persist each seed under a property-id key, but skip the current property.
+    for (const seed of seeds) {
+      if (seed.id === currentPropertyId) continue;
+      // Don't overwrite real data the user may already have on these IDs
+      if (localStorage.getItem(STORAGE_KEY + seed.id)) continue;
+      const data = {
+        address: seed.address,
+        url: seed.url,
+        location: seed.location,
+        // Mark this entry as seeded mock data so the UI can suppress the
+        // "open in new tab" link — these properties don't actually exist.
+        isSeed: true,
+        emojis: {
+          "🔥": { count: 0, active: false },
+          "😍": { count: 0, active: false },
+          "🤔": { count: 0, active: false },
+          "💸": { count: 0, active: false },
+          "📉": { count: 0, active: false },
+          "🏡": { count: 0, active: false },
+        },
+        userVotes: {},
+        comments: seed.comments,
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY + seed.id, JSON.stringify(data));
+      } catch (e) { /* ignore */ }
+    }
+
+    try { localStorage.setItem(sentinel, "1"); } catch (e) { /* ignore */ }
+  }
+
+  function titleCase(str) {
+    return String(str)
+      .split(/[\s-]+/)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  }
 
   /** Auto-generated insights based on URL / meta tags */
   function generateInsights() {
@@ -93,41 +361,48 @@
 
   /** Load reactions for a property (from localStorage for demo) */
   function loadReactions(propertyId) {
+    let stored = null;
     try {
-      const data = localStorage.getItem(STORAGE_KEY + propertyId);
-      if (data) return JSON.parse(data);
+      const raw = localStorage.getItem(STORAGE_KEY + propertyId);
+      if (raw) stored = JSON.parse(raw);
     } catch (e) { /* ignore */ }
 
-    // Return demo data if nothing saved
+    if (stored) {
+      // Strip leftover demo comments from previous versions of the extension.
+      // These were seeded into every fresh property entry under fixed IDs and
+      // would otherwise stick around forever — and pollute the buurt pool.
+      if (Array.isArray(stored.comments)) {
+        stored.comments = stored.comments.filter(
+          (c) => c && c.id !== "demo1" && c.id !== "demo2"
+        );
+      }
+
+      // Keep address/url/location up to date for the active property so that
+      // the neighborhood lookup always has the freshest metadata to match on.
+      stored.address = getPropertyAddress() || stored.address;
+      stored.url = getPropertyUrl() || stored.url;
+      stored.location = Object.assign({}, stored.location || {}, getPropertyLocation());
+      return stored;
+    }
+
+    // Return a clean empty entry. Each property starts without comments;
+    // the buurt-aggregatie surfaces seeded neighbour content when there are
+    // no comments on the current property yet.
     return {
+      address: getPropertyAddress(),
+      url: getPropertyUrl(),
+      location: getPropertyLocation(),
       emojis: {
-        "🔥": { count: 3, active: false },
-        "😍": { count: 1, active: false },
-        "🤔": { count: 2, active: false },
-        "💸": { count: 5, active: false },
+        "🔥": { count: 0, active: false },
+        "😍": { count: 0, active: false },
+        "🤔": { count: 0, active: false },
+        "💸": { count: 0, active: false },
         "📉": { count: 0, active: false },
-        "🏡": { count: 1, active: false },
+        "🏡": { count: 0, active: false },
       },
       // Track the current user's vote per comment: { commentId: "up" | "down" | null }
       userVotes: {},
-      comments: [
-        {
-          id: "demo1",
-          name: "Woningzoeker",
-          text: "Hier hebben we vorig jaar een bezichtiging gedaan. Erg klein in het echt, foto's zijn misleidend.",
-          time: new Date(Date.now() - 86400000 * 3).toISOString(),
-          upvotes: 7,
-          downvotes: 1,
-        },
-        {
-          id: "demo2",
-          name: "Buurman",
-          text: "Mooie straat, maar let op: de achterburen hebben een hond die de hele dag blaft. 🐕",
-          time: new Date(Date.now() - 86400000 * 1).toISOString(),
-          upvotes: 12,
-          downvotes: 0,
-        },
-      ],
+      comments: [],
     };
   }
 
@@ -138,12 +413,140 @@
     } catch (e) { /* ignore */ }
   }
 
+  // ---- Neighborhood Aggregation ----
+  // When the current property has no comments yet, surface comments from
+  // properties in the same area, falling back from most-specific to least-specific:
+  //   street → neighborhood → city → region → province
+  // Region/province are not yet populated in the data layer but the matcher
+  // already supports them so they light up automatically once available.
+
+  const SCOPE_ORDER = ["street", "neighborhood", "city", "region", "province"];
+
+  const SCOPE_LABELS = {
+    street: "Zelfde straat",
+    neighborhood: "Zelfde wijk",
+    city: "Zelfde stad",
+    region: "Zelfde regio",
+    province: "Zelfde provincie",
+  };
+
+  /** Iterate over all stored property entries except the current one. */
+  function getAllStoredProperties(currentPropertyId) {
+    const entries = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(STORAGE_KEY)) continue;
+      const propertyId = key.slice(STORAGE_KEY.length);
+      if (propertyId === currentPropertyId) continue;
+      try {
+        const data = JSON.parse(localStorage.getItem(key));
+        if (data && Array.isArray(data.comments) && data.comments.length > 0) {
+          entries.push({ propertyId, data });
+        }
+      } catch (e) { /* ignore */ }
+    }
+    return entries;
+  }
+
+  /**
+   * Determine the most specific scope at which two locations match.
+   * Returns one of SCOPE_ORDER, or null if there is no match at all.
+   */
+  function matchScope(here, there) {
+    if (!here || !there) return null;
+    for (const scope of SCOPE_ORDER) {
+      const a = here[scope];
+      const b = there[scope];
+      if (a && b && a === b) return scope;
+    }
+    return null;
+  }
+
+  /**
+   * Find comments from neighboring properties, grouped by the most-specific
+   * matching scope. Returns an array of { scope, comments: [...] } already
+   * sorted from most-specific to least-specific. Each comment is enriched
+   * with the address and URL of the property it was originally posted on.
+   */
+  function findNeighborhoodComments(currentPropertyId, currentLocation, limitPerScope = 3) {
+    if (!currentLocation || Object.keys(currentLocation).length === 0) {
+      dbg("buurt: geen location voor huidige property, skip");
+      return [];
+    }
+
+    dbg("buurt: zoek buren voor property", currentPropertyId, "location:", currentLocation);
+
+    const buckets = {}; // scope -> array of enriched comments
+    const stored = getAllStoredProperties(currentPropertyId);
+    dbg("buurt: gevonden andere properties met comments:", stored.length);
+
+    for (const { propertyId, data } of stored) {
+      const scope = matchScope(currentLocation, data.location);
+      dbg(
+        "buurt:   property", propertyId,
+        "location:", data.location,
+        "-> match scope:", scope || "(geen match)"
+      );
+      if (!scope) continue;
+
+      // Sort that property's comments by recency, take the most recent ones
+      const sorted = data.comments
+        .slice()
+        .sort((a, b) => new Date(b.time) - new Date(a.time));
+
+      for (const c of sorted) {
+        if (!buckets[scope]) buckets[scope] = [];
+        buckets[scope].push({
+          ...c,
+          fromAddress: data.address || "een andere woning",
+          // Suppress the link for seeded mock properties since they don't
+          // resolve to a real Funda page.
+          fromUrl: data.isSeed ? null : (data.url || null),
+          fromIsSeed: !!data.isSeed,
+        });
+      }
+    }
+
+    // Show the most specific scope that has results. If that scope has few
+    // comments (≤ 2), also include the next-most-specific scope to fill the
+    // block, and so on, until we have enough context or run out of scopes.
+    const MIN_COMMENTS = 3;
+    const result = [];
+    let totalSoFar = 0;
+    for (const scope of SCOPE_ORDER) {
+      const list = buckets[scope];
+      if (!list || list.length === 0) continue;
+      list.sort((a, b) => new Date(b.time) - new Date(a.time));
+      result.push({ scope, comments: list.slice(0, limitPerScope) });
+      totalSoFar += Math.min(list.length, limitPerScope);
+      if (totalSoFar >= MIN_COMMENTS) break; // enough context
+    }
+    dbg("buurt: eindresultaat groepen:", result.map((g) => `${g.scope}=${g.comments.length}`).join(", ") || "(leeg)");
+    return result;
+  }
+
   // ---- UI Rendering ----
 
   function createPanel() {
     const propertyId = getPropertyId();
     const data = loadReactions(propertyId);
     const insights = generateInsights();
+
+    // Persist any newly-extracted address/url/location so other tabs can match
+    // against them, even if the user never posts a comment here.
+    saveReactions(propertyId, data);
+    dbg("property", propertyId, "address:", data.address, "location:", data.location, "comments:", data.comments.length);
+
+    // Seed a few mock neighbour properties so the buurt-aggregatie has
+    // something to show on a fresh install. No-op once a sentinel is set,
+    // and a no-op when DEMO_MODE is off.
+    seedDemoNeighbours(propertyId, data.location);
+
+    // Comments on this property always take precedence over neighborhood ones,
+    // but the neighborhood block is shown alongside them — below the own
+    // comments, as additional context. Only the most specific scope with any
+    // matches is shown (e.g. street wins over wijk wins over stad).
+    const neighborhoodGroups = findNeighborhoodComments(propertyId, data.location);
 
     // Root
     const root = document.createElement("div");
@@ -203,9 +606,9 @@
           </div>
         </div>
 
-        <!-- Comments -->
+        <!-- Comments (this property) -->
         <ul class="fr-comments" id="fr-comments-list">
-          ${renderComments(data.comments, data.userVotes)}
+          ${renderComments(data.comments, data.userVotes, neighborhoodGroups)}
         </ul>
 
         <!-- Footer -->
@@ -218,8 +621,13 @@
     return root;
   }
 
-  function renderComments(comments, userVotes) {
-    if (!comments.length) {
+  function renderComments(comments, userVotes, neighborhoodGroups) {
+    userVotes = userVotes || {};
+    const hasNeighborhood = neighborhoodGroups && neighborhoodGroups.length > 0;
+    const hasOwn = comments.length > 0;
+
+    // Empty state: no own comments and no neighborhood matches
+    if (!hasOwn && !hasNeighborhood) {
       return `
         <li class="fr-empty">
           <div class="fr-empty__icon">🏠</div>
@@ -227,9 +635,8 @@
         </li>`;
     }
 
-    userVotes = userVotes || {};
-
-    return comments
+    const ownHtml = comments
+      .slice()
       .sort((a, b) => new Date(b.time) - new Date(a.time))
       .map((c) => {
         const initial = c.name.charAt(0).toUpperCase();
@@ -254,6 +661,82 @@
         </li>`;
       })
       .join("");
+
+    const neighborhoodHtml = hasNeighborhood
+      ? renderNeighborhoodGroups(neighborhoodGroups, hasOwn)
+      : "";
+
+    return ownHtml + neighborhoodHtml;
+  }
+
+  /**
+   * Render the neighborhood-aggregation block. Always rendered when there are
+   * matches; placed below own comments when those exist. Within the block,
+   * only the most specific scope with any matches is shown (street > wijk >
+   * stad), so the user is never overwhelmed by less-relevant matches.
+   */
+  function renderNeighborhoodGroups(groups, ownCommentsExist) {
+    const totalCount = groups.reduce((n, g) => n + g.comments.length, 0);
+    const intro = ownCommentsExist
+      ? (totalCount === 1 ? "Ook een reactie" : `Ook ${totalCount} reacties`) +
+        " op andere woningen in de omgeving:"
+      : ("Nog geen reacties op deze woning. " +
+         (totalCount === 1 ? "Dit is een reactie" : `Dit zijn ${totalCount} reacties`) +
+         " op andere woningen in de omgeving.");
+
+    return `
+      <li class="fr-neighborhood">
+        <div class="fr-neighborhood__header">
+          <span>📍 Reacties uit de buurt</span>
+        </div>
+        <p class="fr-neighborhood__intro">${escapeHtml(intro)}</p>
+        <ul class="fr-neighborhood__list">
+          ${groups
+            .map((g) =>
+              g.comments
+                .map((c) => renderNeighborhoodComment(c, g.scope))
+                .join("")
+            )
+            .join("")}
+        </ul>
+      </li>`;
+  }
+
+  function renderNeighborhoodComment(c, scope) {
+    const initial = (c.name || "?").charAt(0).toUpperCase();
+    const bg = avatarColor(c.name || "");
+    const scopeLabel = SCOPE_LABELS[scope] || "In de buurt";
+
+    // For real neighbour comments, link out to the source property in a new tab.
+    // For seeded mock data, render the address as plain text (no fake link).
+    let footer;
+    if (c.fromUrl) {
+      footer = `<a class="fr-neighborhood-comment__link"
+            href="${escapeAttr(c.fromUrl)}"
+            target="_blank"
+            rel="noopener"
+          >${escapeHtml(c.fromAddress || "Bekijk de woning")}</a>`;
+    } else if (c.fromAddress) {
+      footer = `<span class="fr-neighborhood-comment__source">${escapeHtml(c.fromAddress)}${c.fromIsSeed ? " · voorbeeld" : ""}</span>`;
+    } else {
+      footer = "";
+    }
+
+    return `
+      <li class="fr-neighborhood-comment">
+        <span class="fr-neighborhood-comment__scope">📍 ${escapeHtml(scopeLabel)}</span>
+        <div class="fr-neighborhood-comment__top">
+          <div class="fr-neighborhood-comment__avatar" style="background:${bg}22;color:${bg}">${initial}</div>
+          <span class="fr-neighborhood-comment__name">${escapeHtml(c.name || "Anoniem")}</span>
+          <span class="fr-neighborhood-comment__time">${timeAgo(c.time)}</span>
+        </div>
+        <p class="fr-neighborhood-comment__body">${escapeHtml(c.text || "")}</p>
+        ${footer}
+      </li>`;
+  }
+
+  function escapeAttr(str) {
+    return String(str).replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   function escapeHtml(str) {
@@ -323,9 +806,11 @@
       data.comments.unshift(newComment);
       saveReactions(propertyId, data);
 
-      // Re-render comments
+      // Re-render comments. We pass the freshly-computed neighborhood groups
+      // so the buurt-blok stays visible underneath after the user posts.
       const list = root.querySelector("#fr-comments-list");
-      list.innerHTML = renderComments(data.comments, data.userVotes);
+      const neighborhoodGroups = findNeighborhoodComments(propertyId, data.location);
+      list.innerHTML = renderComments(data.comments, data.userVotes, neighborhoodGroups);
       attachVoteEvents(root, data, propertyId);
 
       // Update count

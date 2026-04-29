@@ -334,6 +334,130 @@
   color: var(--fr-downvote);
 }
 
+/* ---- Neighborhood Comments ---- */
+.fr-neighborhood {
+  padding: 12px 14px 4px;
+  border-bottom: 1px solid var(--fr-border);
+  background: var(--fr-bg-alt);
+}
+
+.fr-neighborhood__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fr-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.fr-neighborhood__intro {
+  font-size: 12px;
+  color: var(--fr-text-muted);
+  margin: 0 0 10px;
+  line-height: 1.4;
+}
+
+.fr-neighborhood__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fr-neighborhood-comment {
+  position: relative;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--fr-bg);
+  border: 1px dashed var(--fr-border);
+  border-radius: var(--fr-radius-sm);
+}
+
+.fr-neighborhood-comment:last-child {
+  margin-bottom: 10px;
+}
+
+.fr-neighborhood-comment__scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fr-accent);
+  background: var(--fr-accent-light);
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-bottom: 6px;
+}
+
+.fr-neighborhood-comment__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.fr-neighborhood-comment__avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.fr-neighborhood-comment__name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fr-text);
+}
+
+.fr-neighborhood-comment__time {
+  font-size: 11px;
+  color: var(--fr-text-muted);
+}
+
+.fr-neighborhood-comment__body {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 6px;
+  color: var(--fr-text);
+}
+
+.fr-neighborhood-comment__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fr-accent);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--fr-accent);
+  padding-bottom: 1px;
+}
+
+.fr-neighborhood-comment__link:hover {
+  color: var(--fr-accent-hover);
+  border-bottom-style: solid;
+}
+
+.fr-neighborhood-comment__link::after {
+  content: "↗";
+  font-size: 10px;
+}
+
+.fr-neighborhood-comment__source {
+  display: inline-block;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--fr-text-muted);
+}
+
 /* ---- Empty State ---- */
 .fr-empty {
   padding: 32px 20px;
