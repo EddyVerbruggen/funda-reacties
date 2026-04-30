@@ -281,7 +281,7 @@
 
   // Toggle the seeded fake-neighbour data. Set to false once a real backend is
   // wired up so we don't pollute storage with mock entries.
-  const DEMO_MODE = true; // Set to false once a real backend is wired up
+  const DEMO_MODE = false; // Set to false once a real backend is wired up
 
   // Verbose console logging for the buurt-aggregatie. Leave on while iterating
   // on the matching logic; flip off before shipping.
@@ -349,7 +349,7 @@
           {
             id: "seed_wijk_c1",
             name: "Wijkkenner",
-            text: `Mooie wijk, ${wijkTitle}. ’s Avonds rustig en de basisschool om de hoek heeft een goede reputatie. Wel weinig parkeerplekken in het weekend.`,
+            text: `Mooie wijk, ${wijkTitle}. 's Avonds rustig en de basisschool om de hoek heeft een goede reputatie. Wel weinig parkeerplekken in het weekend.`,
             time: new Date(Date.now() - 86400000 * 8).toISOString(),
             askingPrice: "€ 425.000",
             upvotes: 14,
@@ -418,26 +418,91 @@
       .join(" ");
   }
 
-  /** Auto-generated insights based on URL / meta tags */
+  /** Scrape real insights from the Funda detail page dt/dd pairs */
   function generateInsights() {
     const insights = [];
-    // Days on market (mock — in production, scrape from page or API)
-    const daysOnMarket = Math.floor(Math.random() * 180) + 5;
-    insights.push({ icon: "📅", text: `${daysOnMarket} dagen online` });
+    const dts = document.querySelectorAll("dt");
 
-    // Price per m² (mock)
-    const priceEl = document.querySelector('[class*="price"], [data-testid*="price"]');
-    const areaEl = document.querySelector('[class*="surface"], [class*="area"]');
-    if (priceEl || areaEl) {
-      const mockPricePerM2 = (3000 + Math.floor(Math.random() * 4000));
-      insights.push({ icon: "📐", text: `~€${mockPricePerM2.toLocaleString("nl-NL")}/m²` });
+    /**
+     * Helper: find a <dt> whose text starts with one of the given prefixes,
+     * then return the trimmed textContent of the following <dd>.
+     */
+    function findDd(...prefixes) {
+      for (const dt of dts) {
+        const label = (dt.textContent || "").trim().toLowerCase();
+        if (prefixes.some((p) => label.startsWith(p))) {
+          const dd = dt.nextElementSibling;
+          if (dd && dd.tagName === "DD") return (dd.textContent || "").trim();
+        }
+      }
+      return null;
     }
 
-    // Neighborhood vibe (mock)
-    const vibes = ["Rustige buurt", "Levendige buurt", "Kindvriendelijk", "Veel groen", "Dichtbij centrum"];
-    insights.push({ icon: "🏘️", text: vibes[Math.floor(Math.random() * vibes.length)] });
+    // ---- Days online ----
+    const sinceStr = findDd("aangeboden sinds", "datum van aanmelding");
+    if (sinceStr) {
+      const parsed = parseDutchDate(sinceStr);
+      if (parsed) {
+        const days = Math.floor((Date.now() - parsed.getTime()) / 86400000);
+        if (days >= 0) insights.push({ icon: "📅", text: `${days} dagen online` });
+      }
+    }
+
+    // ---- Living area & price per m² ----
+    const areaStr = findDd("wonen", "woonoppervlakte", "gebruiksoppervlakte wonen");
+    let livingArea = null;
+    if (areaStr) {
+      const m = areaStr.match(/([\d.,]+)\s*m/i);
+      if (m) livingArea = parseInt(m[1].replace(/\./g, ""), 10);
+    }
+    const priceNum = parsePrice(getAskingPrice());
+    if (livingArea > 0 && priceNum > 0) {
+      const ppm2 = Math.round(priceNum / livingArea);
+      insights.push({ icon: "📋", text: `€ ${ppm2.toLocaleString("nl-NL")}/m²` });
+    } else if (livingArea > 0) {
+      insights.push({ icon: "📋", text: `${livingArea} m² wonen` });
+    }
+
+    // ---- Energy label ----
+    const energyLabel = findDd("energielabel");
+    if (energyLabel && energyLabel.length <= 5) {
+      insights.push({ icon: "⚡", text: energyLabel });
+    }
+
+    // ---- Build year ----
+    const buildYear = findDd("bouwjaar");
+    if (buildYear && /^\d{4}$/.test(buildYear)) {
+      insights.push({ icon: "🏗️", text: buildYear });
+    }
+
+    // ---- Number of rooms ----
+    const rooms = findDd("aantal kamers");
+    if (rooms) {
+      insights.push({ icon: "🛏️", text: rooms });
+    }
 
     return insights;
+  }
+
+  /**
+   * Parse a Dutch date string like "14 maart 2025" or "3 jan. 2024"
+   * into a Date object. Returns null on failure.
+   */
+  function parseDutchDate(str) {
+    const months = {
+      januari: 0, februari: 1, maart: 2, april: 3, mei: 4, juni: 5,
+      juli: 6, augustus: 7, september: 8, oktober: 9, november: 10, december: 11,
+      jan: 0, feb: 1, mrt: 2, apr: 3, jun: 5,
+      jul: 6, aug: 7, sep: 8, okt: 9, nov: 10, dec: 11,
+    };
+    const cleaned = str.replace(/\./g, "").trim().toLowerCase();
+    const m = cleaned.match(/(\d{1,2})\s+([a-z]+)\s+(\d{4})/);
+    if (!m) return null;
+    const day = parseInt(m[1], 10);
+    const monthIdx = months[m[2]];
+    const year = parseInt(m[3], 10);
+    if (monthIdx === undefined) return null;
+    return new Date(year, monthIdx, day);
   }
 
   /** Load reactions for a property (from localStorage for demo) */
@@ -968,7 +1033,7 @@
       </button>
       <div class="fr-emoji-picker" id="fr-emoji-picker" style="display:none">
         <div class="fr-emoji-picker__search-wrap">
-          <input type="text" class="fr-emoji-picker__search" id="fr-emoji-search" placeholder="Zoek emoji\u2026" />
+          <input type="text" class="fr-emoji-picker__search" id="fr-emoji-search" placeholder="Zoek emoji…" />
         </div>
         <div class="fr-emoji-picker__grid" id="fr-emoji-grid"></div>
       </div>
