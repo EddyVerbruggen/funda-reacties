@@ -80,6 +80,15 @@
   border: 1px solid var(--fr-border);
 }
 
+.fr-header__count--loading {
+  animation: fr-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes fr-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* ---- Quick Reactions Bar ---- */
 .fr-quick-reactions {
   display: flex;
@@ -87,6 +96,7 @@
   padding: 10px 14px;
   border-bottom: 1px solid var(--fr-border);
   flex-wrap: wrap;
+  position: relative;
 }
 
 .fr-emoji-btn {
@@ -118,6 +128,13 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--fr-text-muted);
+}
+
+/* Skeleton emoji buttons (greyed out while loading) */
+.fr-emoji-btn--skeleton {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
 }
 
 /* ---- Add Emoji Button ---- */
@@ -216,11 +233,6 @@
 
 .fr-emoji-picker__item:hover {
   background: var(--fr-bg-hover);
-}
-
-/* Make the quick-reactions bar position:relative so the picker can anchor to it */
-.fr-quick-reactions {
-  position: relative;
 }
 
 /* ---- Insights (auto-generated data) ---- */
@@ -631,6 +643,11 @@
 /* ---- Loading Skeleton ---- */
 .fr-skeleton {
   padding: 16px 20px;
+  border-bottom: 1px solid var(--fr-border);
+}
+
+.fr-skeleton:last-child {
+  border-bottom: none;
 }
 
 .fr-skeleton__line {
@@ -642,9 +659,9 @@
   margin-bottom: 10px;
 }
 
-.fr-skeleton__line:nth-child(1) { width: 60%; }
-.fr-skeleton__line:nth-child(2) { width: 90%; }
-.fr-skeleton__line:nth-child(3) { width: 45%; }
+.fr-skeleton__line:last-child {
+  margin-bottom: 0;
+}
 
 @keyframes fr-shimmer {
   0% { background-position: 200% 0; }
