@@ -107,7 +107,7 @@
 
     const dts = document.querySelectorAll("dt");
     for (const dt of dts) {
-      if ((dt.textContent || "").trim().toLowerCase().startsWith("vraagprijs")) {
+      if ((dt.textContent || "").trim().toLowerCase().endsWith("vraagprijs")) {
         const dd = dt.nextElementSibling;
         if (dd && dd.tagName === "DD") {
           const txt = (dd.textContent || "").trim();
