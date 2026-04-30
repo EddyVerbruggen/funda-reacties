@@ -120,6 +120,109 @@
   color: var(--fr-text-muted);
 }
 
+/* ---- Add Emoji Button ---- */
+.fr-emoji-btn--add {
+  border-style: dashed;
+  color: var(--fr-text-muted);
+}
+
+.fr-emoji-btn--add:hover {
+  color: var(--fr-accent);
+  border-color: var(--fr-accent);
+}
+
+.fr-emoji-btn--add__plus {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ---- Emoji Picker ---- */
+.fr-emoji-picker {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 6px;
+  background: var(--fr-bg);
+  border: 1px solid var(--fr-border);
+  border-radius: var(--fr-radius);
+  box-shadow: var(--fr-shadow-lg);
+  z-index: 1000;
+  max-height: 260px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.fr-emoji-picker__search-wrap {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--fr-border);
+}
+
+.fr-emoji-picker__search {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--fr-border);
+  border-radius: var(--fr-radius-sm);
+  font-family: var(--fr-font);
+  font-size: 13px;
+  color: var(--fr-text);
+  outline: none;
+  background: var(--fr-bg-alt);
+}
+
+.fr-emoji-picker__search::placeholder {
+  color: var(--fr-text-muted);
+}
+
+.fr-emoji-picker__search:focus {
+  border-color: var(--fr-accent);
+  background: var(--fr-bg);
+}
+
+.fr-emoji-picker__grid {
+  overflow-y: auto;
+  padding: 6px 10px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-content: flex-start;
+}
+
+.fr-emoji-picker__category {
+  width: 100%;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--fr-text-muted);
+  padding: 6px 2px 2px;
+}
+
+.fr-emoji-picker__item {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  border-radius: var(--fr-radius-sm);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.fr-emoji-picker__item:hover {
+  background: var(--fr-bg-hover);
+}
+
+/* Make the quick-reactions bar position:relative so the picker can anchor to it */
+.fr-quick-reactions {
+  position: relative;
+}
+
 /* ---- Insights (auto-generated data) ---- */
 .fr-insights {
   padding: 6px 10px;
@@ -456,6 +559,37 @@
   font-size: 11px;
   font-style: italic;
   color: var(--fr-text-muted);
+}
+
+/* ---- Price Change Tag ---- */
+.fr-price-change {
+  display: block;
+  margin: 0 0 8px 36px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.fr-price-change--up {
+  background: #fef3ec;
+  color: #c4534a;
+}
+
+.fr-price-change--down {
+  background: #e6f4ec;
+  color: #2d6b45;
+}
+
+.fr-price-change__old {
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.fr-price-change__pct {
+  font-weight: 700;
+  margin-top: 2px;
 }
 
 /* ---- Empty State ---- */

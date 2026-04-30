@@ -53,7 +53,7 @@
     if (streetPart && cityTitle) return `${streetPart}, ${cityTitle}`;
     if (streetPart) return streetPart;
     if (cityTitle) return cityTitle;
-    return document.title.replace(/ \[funda\].*/, "").trim();
+    return document.title.replace(/ \[funda].*/, "").trim();
   }
 
   /** Get the canonical URL for the current property (without query/hash) */
@@ -159,6 +159,84 @@
     return loc;
   }
 
+  /**
+   * Scrape the asking price from the Funda detail page.
+   * Returns the raw text (e.g. "€ 425.000 k.k.") or null if not found.
+   *
+   * Funda renders the price in a <dt>Vraagprijs</dt> / <dd>€ …</dd> pair
+   * inside a definition list, and sometimes as a prominent heading element.
+   * We try multiple strategies.
+   */
+  /**
+   * Strip "k.k.", "v.o.n.", and similar suffixes from a price string.
+   * Keeps only the "€ 123.456" part.
+   */
+  function cleanPriceText(raw) {
+    if (!raw) return null;
+    return raw.replace(/\s*(k\.k\.|v\.o\.n\.|kosten koper|vrij op naam)\s*/gi, "").trim();
+  }
+
+  function getAskingPrice() {
+    let raw = null;
+
+    // Strategy 1: <dt>Vraagprijs</dt> followed by <dd> with the price
+    const dts = document.querySelectorAll("dt");
+    for (const dt of dts) {
+      if ((dt.textContent || "").trim().toLowerCase().startsWith("vraagprijs")) {
+        const dd = dt.nextElementSibling;
+        if (dd && dd.tagName === "DD") {
+          const txt = (dd.textContent || "").trim();
+          if (txt.includes("€") || /\d/.test(txt)) { raw = txt; break; }
+        }
+      }
+    }
+
+    // Strategy 2: data-testid or class containing "price"
+    if (!raw) {
+      const priceSels = [
+        '[data-testid="asking-price"]',
+        '[data-testid*="price"]',
+        '[class*="askingPrice"]',
+        '[class*="asking-price"]',
+      ];
+      for (const sel of priceSels) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const txt = (el.textContent || "").trim();
+          if (txt.includes("€") || /\d/.test(txt)) { raw = txt; break; }
+        }
+      }
+    }
+
+    // Strategy 3: look for a large text node starting with €
+    if (!raw) {
+      const headings = document.querySelectorAll("h2, h3, span, p, div");
+      for (const el of headings) {
+        const txt = (el.textContent || "").trim();
+        if (/^€\s*[\d.,]+/.test(txt) && txt.length < 40) { raw = txt; break; }
+      }
+    }
+
+    return cleanPriceText(raw);
+  }
+
+  /**
+   * Parse a Dutch price string like "€ 425.000 k.k." into a numeric value (425000).
+   * Returns null if parsing fails.
+   */
+  function parsePrice(priceStr) {
+    if (!priceStr) return null;
+    // Remove everything except digits and dots/commas, then normalize
+    const cleaned = priceStr.replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", ".");
+    const num = parseInt(cleaned, 10);
+    return isNaN(num) ? null : num;
+  }
+
+  /** Format a number as a Dutch price string: € 425.000 */
+  function formatPrice(num) {
+    return "€ " + num.toLocaleString("nl-NL");
+  }
+
   /** Time-ago formatter */
   function timeAgo(dateString) {
     const now = Date.now();
@@ -203,7 +281,7 @@
 
   // Toggle the seeded fake-neighbour data. Set to false once a real backend is
   // wired up so we don't pollute storage with mock entries.
-  const DEMO_MODE = true;
+  const DEMO_MODE = true; // Set to false once a real backend is wired up
 
   // Verbose console logging for the buurt-aggregatie. Leave on while iterating
   // on the matching logic; flip off before shipping.
@@ -249,6 +327,7 @@
             name: "Buurtbewoner",
             text: "Een paar huizen verderop heb ik bezichtigd — vergelijkbare lay-out, maar de tuin lag op het noorden. Let dus goed op de oriantatie als je hier komt kijken.",
             time: new Date(Date.now() - 86400000 * 4).toISOString(),
+            askingPrice: "€ 349.000",
             upvotes: 9,
             downvotes: 0,
           },
@@ -272,6 +351,7 @@
             name: "Wijkkenner",
             text: `Mooie wijk, ${wijkTitle}. ’s Avonds rustig en de basisschool om de hoek heeft een goede reputatie. Wel weinig parkeerplekken in het weekend.`,
             time: new Date(Date.now() - 86400000 * 8).toISOString(),
+            askingPrice: "€ 425.000",
             upvotes: 14,
             downvotes: 1,
           },
@@ -293,6 +373,7 @@
           name: "Vastgoedfan",
           text: `Algemene tip voor ${cityTitle}: kijk goed naar de WOZ-waarde versus vraagprijs. Verschillen lopen hier soms flink uit elkaar tussen wijken.`,
           time: new Date(Date.now() - 86400000 * 14).toISOString(),
+          askingPrice: "€ 289.500",
           upvotes: 6,
           downvotes: 0,
         },
@@ -369,11 +450,9 @@
 
     if (stored) {
       // Strip leftover demo comments from previous versions of the extension.
-      // These were seeded into every fresh property entry under fixed IDs and
-      // would otherwise stick around forever — and pollute the buurt pool.
       if (Array.isArray(stored.comments)) {
         stored.comments = stored.comments.filter(
-          (c) => c && c.id !== "demo1" && c.id !== "demo2"
+          (c) => c && c.id !== "demo1" && c.id !== "demo2" && c.id !== "demo_price_up" && c.id !== "demo_price_down" && c.id !== "demo_no_change"
         );
       }
 
@@ -385,9 +464,39 @@
       return stored;
     }
 
-    // Return a clean empty entry. Each property starts without comments;
-    // the buurt-aggregatie surfaces seeded neighbour content when there are
-    // no comments on the current property yet.
+    // Return a clean empty entry — or with demo comments if DEMO_MODE is on.
+    // Demo comments have old asking prices to showcase the price-change UI.
+    const demoComments = DEMO_MODE
+      ? [
+          {
+            id: "demo_price_up",
+            name: "Starter",
+            text: "Zag er op foto's goed uit, maar de badkamer is echt aan renovatie toe. Prijs-kwaliteit is nu matig.",
+            time: new Date(Date.now() - 86400000 * 45).toISOString(),
+            askingPrice: "€ 365.000",
+            upvotes: 5,
+            downvotes: 1,
+          },
+          {
+            id: "demo_price_down",
+            name: "Bezichtiger",
+            text: "Net bezichtigd. De woonkamer is verrassend ruim en de tuin is heerlijk op het zuiden. Aanrader om te gaan kijken!",
+            time: new Date(Date.now() - 86400000 * 21).toISOString(),
+            askingPrice: "€ 449.000",
+            upvotes: 12,
+            downvotes: 0,
+          },
+          {
+            id: "demo_no_change",
+            name: "Woningkijker",
+            text: "Buren waren heel aardig, gaven aan dat het hier 's avonds lekker rustig is. Parkeren kan voor de deur.",
+            time: new Date(Date.now() - 86400000 * 2).toISOString(),
+            upvotes: 3,
+            downvotes: 0,
+          },
+        ]
+      : [];
+
     return {
       address: getPropertyAddress(),
       url: getPropertyUrl(),
@@ -402,7 +511,7 @@
       },
       // Track the current user's vote per comment: { commentId: "up" | "down" | null }
       userVotes: {},
-      comments: [],
+      comments: demoComments,
     };
   }
 
@@ -575,6 +684,15 @@
             </button>`
             )
             .join("")}
+          <button class="fr-emoji-btn fr-emoji-btn--add" id="fr-add-emoji-btn" title="Emoji toevoegen">
+            <span class="fr-emoji-btn--add__plus">+</span>
+          </button>
+          <div class="fr-emoji-picker" id="fr-emoji-picker" style="display:none">
+            <div class="fr-emoji-picker__search-wrap">
+              <input type="text" class="fr-emoji-picker__search" id="fr-emoji-search" placeholder="Zoek emoji…" />
+            </div>
+            <div class="fr-emoji-picker__grid" id="fr-emoji-grid"></div>
+          </div>
         </div>
 
         <!-- Auto-generated insights -->
@@ -621,10 +739,34 @@
     return root;
   }
 
+  /**
+   * Render a price-change tag if the asking price at comment time differs
+   * from the current asking price. Returns HTML string or empty string.
+   * Format: "Vraagprijs destijds € 425.000" on line 1, then "+15%" on line 2
+   */
+  function renderPriceChange(commentPrice, currentPrice) {
+    if (!commentPrice || !currentPrice) return "";
+    const then = parsePrice(commentPrice);
+    const now = parsePrice(currentPrice);
+    if (!then || !now || then === now) return "";
+
+    const diff = now - then;
+    const pct = ((diff / then) * 100).toFixed(0);
+    const sign = diff > 0 ? "+" : "";
+    const cls = diff > 0 ? "fr-price-change--up" : "fr-price-change--down";
+
+    return `
+      <div class="fr-price-change ${cls}">
+        <div class="fr-price-change__old">Vraagprijs destijds ${escapeHtml(commentPrice)}</div>
+        <div class="fr-price-change__pct">${sign}${pct}%</div>
+      </div>`;
+  }
+
   function renderComments(comments, userVotes, neighborhoodGroups) {
     userVotes = userVotes || {};
     const hasNeighborhood = neighborhoodGroups && neighborhoodGroups.length > 0;
     const hasOwn = comments.length > 0;
+    const currentPrice = getAskingPrice();
 
     // Empty state: no own comments and no neighborhood matches
     if (!hasOwn && !hasNeighborhood) {
@@ -642,6 +784,7 @@
         const initial = c.name.charAt(0).toUpperCase();
         const bg = avatarColor(c.name);
         const myVote = userVotes[c.id] || null; // "up", "down", or null
+        const priceTag = renderPriceChange(c.askingPrice, currentPrice);
         return `
         <li class="fr-comment" data-id="${c.id}">
           <div class="fr-comment__top">
@@ -649,7 +792,7 @@
             <span class="fr-comment__name">${escapeHtml(c.name)}</span>
             <span class="fr-comment__time">${timeAgo(c.time)}</span>
           </div>
-          <p class="fr-comment__body">${escapeHtml(c.text)}</p>
+          <p class="fr-comment__body">${escapeHtml(c.text)}</p>${priceTag}
           <div class="fr-comment__footer">
             <button class="fr-vote-btn fr-vote-btn--up${myVote === "up" ? " active" : ""}" data-vote="up" data-comment="${c.id}">
               ▲ <span>${c.upvotes}</span>
@@ -706,6 +849,8 @@
     const initial = (c.name || "?").charAt(0).toUpperCase();
     const bg = avatarColor(c.name || "");
     const scopeLabel = SCOPE_LABELS[scope] || "In de buurt";
+    const currentPrice = getAskingPrice();
+    const priceTag = renderPriceChange(c.askingPrice, currentPrice);
 
     // For real neighbour comments, link out to the source property in a new tab.
     // For seeded mock data, render the address as plain text (no fake link).
@@ -730,7 +875,7 @@
           <span class="fr-neighborhood-comment__name">${escapeHtml(c.name || "Anoniem")}</span>
           <span class="fr-neighborhood-comment__time">${timeAgo(c.time)}</span>
         </div>
-        <p class="fr-neighborhood-comment__body">${escapeHtml(c.text || "")}</p>
+        <p class="fr-neighborhood-comment__body">${escapeHtml(c.text || "")}</p>${priceTag}
         ${footer}
       </li>`;
   }
@@ -747,18 +892,114 @@
 
   // ---- Event Handlers ----
 
-  function attachEvents(root) {
-    const propertyId = getPropertyId();
-    const data = loadReactions(propertyId);
+  // ---- Emoji Picker Data ----
 
-    // Emoji reactions
-    root.querySelectorAll(".fr-emoji-btn").forEach((btn) => {
+  /** The default emoji that always stay in the bar (never removed on deactivate) */
+  const DEFAULT_EMOJI = new Set(["🔥", "😍", "🤔", "💸", "📉", "🏡"]);
+
+  /** A curated set of emoji grouped by category, with search keywords per emoji */
+  const EMOJI_CATEGORIES = {
+    "Woning": [
+      ["🏠", "huis woning huis"], ["🏡", "huis tuin woning"], ["🏘️", "wijk huizen buurt"],
+      ["🏗️", "bouw nieuwbouw constructie"], ["🏢", "kantoor gebouw appartement"],
+      ["🪴", "plant groen tuin"], ["🛋️", "bank woonkamer meubel"], ["🛏️", "bed slaapkamer"],
+      ["🚿", "douche badkamer"], ["🔑", "sleutel kopen verkocht"], ["🪟", "raam venster licht"],
+      ["🚪", "deur ingang"], ["🧱", "steen muur baksteen"], ["🏚️", "oud vervallen opknapper"],
+    ],
+    "Gevoel": [
+      ["😍", "mooi prachtig verliefd love"], ["🤩", "wauw geweldig star"],
+      ["😊", "blij leuk fijn"], ["🤔", "twijfel denken hmm"],
+      ["😬", "oeps awkward yikes"], ["😢", "verdrietig jammer helaas"],
+      ["😱", "schrik shock duur"], ["🥳", "feest party verkocht hoera"],
+      ["👀", "kijken bezichtigen ogen"], ["🙈", "oh nee niet kijken"],
+      ["❤️", "hart liefde love"], ["💔", "teleurstelling gebroken hart"],
+      ["👍", "goed top prima akkoord"], ["👎", "slecht nee afwijzen"],
+    ],
+    "Geld": [
+      ["💰", "geld rijk duur prijs"], ["💸", "geld weg duur kwijt"],
+      ["🤑", "geld hebberig rijk"], ["📉", "daling goedkoper zakking"],
+      ["📈", "stijging duurder waarde"], ["💲", "prijs kosten dollar"],
+      ["🏦", "bank hypotheek lening"], ["💳", "betalen creditcard"], ["🪙", "munt geld"],
+    ],
+    "Locatie": [
+      ["📍", "locatie plek plek"], ["🚉", "station trein ov"],
+      ["🚗", "auto parkeren weg"], ["🚲", "fiets fietsen"],
+      ["🌳", "boom park natuur groen"], ["🏫", "school onderwijs kinderen"],
+      ["🏥", "ziekenhuis gezondheid"], ["🛒", "supermarkt winkelen boodschappen"],
+      ["🍽️", "restaurant eten uit"], ["☕", "koffie cafe horeca"],
+      ["🏖️", "strand zee vakantie"], ["⛰️", "berg natuur uitzicht"],
+    ],
+    "Overig": [
+      ["🔥", "hot populair gewild"], ["⭐", "ster favoriet top"],
+      ["✨", "nieuw schoon fris"], ["💎", "luxe premium diamant"],
+      ["🎉", "feest gefeliciteerd verkocht"], ["⚠️", "waarschuwing let op"],
+      ["❓", "vraag onzeker"], ["💡", "idee tip"],
+      ["📸", "foto camera beeld"], ["🐶", "hond huisdier"],
+      ["🐱", "kat poes huisdier"], ["👶", "baby kind gezin"],
+    ],
+  };
+
+  /** Flatten all picker emoji into a single searchable list (emoji + keywords) */
+  const ALL_PICKER_EMOJI = Object.values(EMOJI_CATEGORIES).flat();
+
+  /**
+   * Re-render the emoji bar after adding a new emoji.
+   * Rebuilds the buttons and re-attaches all event handlers.
+   */
+  function refreshEmojiBar(root, data, propertyId) {
+    const bar = root.querySelector("#fr-emoji-bar");
+    if (!bar) return;
+
+    // Rebuild button HTML
+    const buttonsHtml = Object.entries(data.emojis)
+      .map(
+        ([emoji, info]) => `
+        <button class="fr-emoji-btn ${info.active ? "active" : ""}" data-emoji="${emoji}">
+          ${emoji}
+          <span class="fr-emoji-btn__count">${info.count || ""}</span>
+        </button>`
+      )
+      .join("");
+
+    bar.innerHTML = `
+      ${buttonsHtml}
+      <button class="fr-emoji-btn fr-emoji-btn--add" id="fr-add-emoji-btn" title="Emoji toevoegen">
+        <span class="fr-emoji-btn--add__plus">+</span>
+      </button>
+      <div class="fr-emoji-picker" id="fr-emoji-picker" style="display:none">
+        <div class="fr-emoji-picker__search-wrap">
+          <input type="text" class="fr-emoji-picker__search" id="fr-emoji-search" placeholder="Zoek emoji\u2026" />
+        </div>
+        <div class="fr-emoji-picker__grid" id="fr-emoji-grid"></div>
+      </div>
+    `;
+
+    // Re-attach all emoji bar events (existing buttons + picker)
+    attachEmojiBarEvents(root, data, propertyId);
+  }
+
+  /**
+   * Attach click handlers for existing emoji buttons and the add-emoji picker.
+   * Extracted so it can be called both on initial render and after refresh.
+   */
+  function attachEmojiBarEvents(root, data, propertyId) {
+    // Existing emoji toggle buttons
+    root.querySelectorAll(".fr-emoji-btn[data-emoji]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const emoji = btn.dataset.emoji;
         const info = data.emojis[emoji];
         if (info.active) {
           info.count = Math.max(0, info.count - 1);
           info.active = false;
+
+          // Remove non-default emoji when count drops to 0
+          if (info.count === 0 && !DEFAULT_EMOJI.has(emoji)) {
+            delete data.emojis[emoji];
+            saveReactions(propertyId, data);
+            refreshEmojiBar(root, data, propertyId);
+            return;
+          }
+
           btn.classList.remove("active");
         } else {
           info.count++;
@@ -768,6 +1009,96 @@
         btn.querySelector(".fr-emoji-btn__count").textContent = info.count || "";
         saveReactions(propertyId, data);
       });
+    });
+
+    // Picker elements
+    const addBtn = root.querySelector("#fr-add-emoji-btn");
+    const picker = root.querySelector("#fr-emoji-picker");
+    const grid = root.querySelector("#fr-emoji-grid");
+    const searchInput = root.querySelector("#fr-emoji-search");
+
+    function renderPickerGrid(filter) {
+      const filt = (filter || "").trim().toLowerCase();
+      let html = "";
+
+      // Hide emoji that are already in the bar
+      const alreadyInBar = new Set(Object.keys(data.emojis));
+
+      if (filt) {
+        // Search across keywords and category names
+        const matches = ALL_PICKER_EMOJI.filter(([e, keywords]) => {
+          if (alreadyInBar.has(e)) return false;
+          // Match against keywords
+          if (keywords.toLowerCase().includes(filt)) return true;
+          // Match against category name
+          return Object.entries(EMOJI_CATEGORIES).some(
+            ([cat, list]) => list.some(([le]) => le === e) && cat.toLowerCase().includes(filt)
+          );
+        });
+        if (matches.length > 0) {
+          html = matches.map(([e]) => `<button class="fr-emoji-picker__item" data-pick="${e}">${e}</button>`).join("");
+        } else {
+          html = `<div class="fr-emoji-picker__category">Geen resultaten</div>`;
+        }
+      } else {
+        for (const [cat, emojis] of Object.entries(EMOJI_CATEGORIES)) {
+          const filtered = emojis.filter(([e]) => !alreadyInBar.has(e));
+          if (filtered.length === 0) continue;
+          html += `<div class="fr-emoji-picker__category">${escapeHtml(cat)}</div>`;
+          html += filtered.map(([e]) => `<button class="fr-emoji-picker__item" data-pick="${e}">${e}</button>`).join("");
+        }
+      }
+
+      grid.innerHTML = html;
+
+      grid.querySelectorAll(".fr-emoji-picker__item").forEach((item) => {
+        item.addEventListener("click", () => {
+          const emoji = item.dataset.pick;
+          picker.style.display = "none";
+          searchInput.value = "";
+
+          if (data.emojis[emoji]) {
+            if (!data.emojis[emoji].active) {
+              data.emojis[emoji].count++;
+              data.emojis[emoji].active = true;
+            }
+          } else {
+            data.emojis[emoji] = { count: 1, active: true };
+          }
+          saveReactions(propertyId, data);
+          refreshEmojiBar(root, data, propertyId);
+        });
+      });
+    }
+
+    addBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isVisible = picker.style.display !== "none";
+      picker.style.display = isVisible ? "none" : "";
+      if (!isVisible) {
+        renderPickerGrid("");
+        setTimeout(() => searchInput.focus(), 50);
+      }
+    });
+
+    searchInput.addEventListener("input", () => {
+      renderPickerGrid(searchInput.value);
+    });
+
+    picker.addEventListener("click", (e) => e.stopPropagation());
+  }
+
+  function attachEvents(root) {
+    const propertyId = getPropertyId();
+    const data = loadReactions(propertyId);
+
+    // Emoji bar (existing buttons + picker)
+    attachEmojiBarEvents(root, data, propertyId);
+
+    // Close picker when clicking outside
+    document.addEventListener("click", () => {
+      const picker = root.querySelector("#fr-emoji-picker");
+      if (picker) picker.style.display = "none";
     });
 
     // Compose textarea
@@ -799,6 +1130,7 @@
         name,
         text,
         time: new Date().toISOString(),
+        askingPrice: getAskingPrice(),
         upvotes: 0,
         downvotes: 0,
       };

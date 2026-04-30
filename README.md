@@ -74,7 +74,6 @@ Voeg een backend toe zodat reacties gedeeld worden tussen alle gebruikers:
 ### Toekomstige features
 
 - [ ] Google Sign-In (optioneel, voor persistent profiel)
-- [ ] Mogelijk maken een nieuwe emoji-reactie te geven (nu kun je alleen bestaande emoji aanklikken)
 - [ ] Sla op wat de vraagprijs was ten tijde van het plaatsen van een comment en toon dat bij de comment, mocht het afwijken van de huidige vraagprijs
 - [ ] Buurt-aggregatie uitbreiden met regio en provincie (nu wordt op straat → wijk → stad gematcht; regio en provincie zitten al in de architectuur maar worden nog niet automatisch ingevuld)
 - [ ] Moderatie (rapporteer-knop, automatische spam-detectie)
