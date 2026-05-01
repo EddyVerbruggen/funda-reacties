@@ -17,17 +17,12 @@
   }
 
   // ---- Profiel laden en tonen ----
-  chrome.storage.local.get(['userId', 'displayName', 'fundaEmail', 'totalComments', 'propertiesViewed'], (result) => {
-    document.getElementById("stat-comments").textContent = result.totalComments || 0;
-    document.getElementById("stat-properties").textContent = result.propertiesViewed || 0;
-
+  chrome.storage.local.get(['userId', 'displayName', 'fundaEmail'], (result) => {
     const profileSection = document.getElementById("profile-section");
     const fundaEmail = result.fundaEmail;
     const displayName = result.displayName || "—";
-    const userId = result.userId || "—";
 
     if (fundaEmail) {
-      // Ingelogd als Funda-gebruiker
       profileSection.innerHTML = `
         <div class="diag-row">
           <span>Funda-account</span>
@@ -77,33 +72,4 @@
     diagSupabase.textContent = "✗ Geen verbinding";
     diagSupabase.className = "diag-badge diag-badge--warn";
   }
-
-  // ---- Test notification button ----
-  const btnTest = document.getElementById("btn-test-notif");
-  const testResult = document.getElementById("test-result");
-
-  btnTest.addEventListener("click", () => {
-    btnTest.disabled = true;
-    btnTest.textContent = "Bezig…";
-    testResult.className = "test-result";
-    testResult.textContent = "";
-
-    chrome.runtime.sendMessage({
-      type: "TEST_NOTIFICATION",
-      title: "🧪 Test notificatie",
-      message: "Als je dit ziet, werken de notificaties correct!",
-      propertyUrl: tab?.url || "https://www.funda.nl",
-    }, (response) => {
-      btnTest.disabled = false;
-      btnTest.textContent = "🔔 Stuur een testnotificatie";
-      if (chrome.runtime.lastError || response?.status === "error") {
-        const err = chrome.runtime.lastError?.message || response?.error || "Onbekende fout";
-        testResult.className = "test-result test-result--err";
-        testResult.textContent = `❌ Fout: ${err}. Check macOS Instellingen → Notificaties → Google Chrome.`;
-      } else {
-        testResult.className = "test-result test-result--ok";
-        testResult.textContent = "✅ Notificatie verzonden! Zie je hem?";
-      }
-    });
-  });
 })();

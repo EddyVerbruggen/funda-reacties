@@ -124,7 +124,7 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 - Anonieme user IDs (opgeslagen in chrome.storage.local)
 - Row Level Security voor data-bescherming
 
-### Toekomstige features (v0.6+)
+### Toekomstige features
 
 - [ ] Buurt-aggregatie uitbreiden met regio en provincie
 - [ ] Moderatie (rapporteer-knop, automatische spam-detectie)
@@ -132,6 +132,8 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 - [ ] Integratie met WOZ-data en CBS-statistieken
 - [ ] Export/import van reacties
 - [ ] Dark mode
+- [ ] Popup: teller voor geplaatste reacties en bekeken woningen
+- [ ] Popup: knop om een testnotificatie te versturen
 
 ---
 

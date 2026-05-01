@@ -5,7 +5,7 @@
 const SUPABASE_URL = 'https://xjniqvdfwnsvsuuteakt.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqbmlxdmRmd25zdnN1dXRlYWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NDgxNjIsImV4cCI6MjA5MzAyNDE2Mn0.Dr-t4SIBaZMYu2nn1553S1VzaSCm2bcnxCcAzue_xKo';
 
-const DEBUG = true;
+const DEBUG = false;
 function dbg(...args) { if (DEBUG) console.log('[Funda Reacties]', ...args); }
 
 const { createClient } = supabase;

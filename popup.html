@@ -14,10 +14,6 @@
     .popup__status { padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; line-height: 1.5; }
     .popup__status--active  { background: #e6f4ec; color: #2d6b45; border: 1px solid #b8dfc8; }
     .popup__status--inactive { background: #fef3ec; color: #9b5623; border: 1px solid #f0d4b8; }
-    .popup__stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
-    .stat { background: #fff; border: 1px solid #e2ddd5; border-radius: 8px; padding: 12px; text-align: center; }
-    .stat__value { font-size: 22px; font-weight: 700; color: #e86c2a; }
-    .stat__label { font-size: 11px; color: #8a7e6e; margin-top: 2px; }
     .popup__section { margin-bottom: 14px; }
     .popup__section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #8a7e6e; margin-bottom: 6px; }
     .diag-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #e2ddd5; font-size: 12px; color: #5c5245; }
@@ -25,12 +21,6 @@
     .diag-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
     .diag-badge--ok   { background: #e6f4ec; color: #2d6b45; }
     .diag-badge--warn { background: #fef3ec; color: #9b5623; }
-    .btn-test { width: 100%; padding: 10px; background: #e86c2a; color: #fff; border: none; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; margin-bottom: 10px; transition: background 0.15s; }
-    .btn-test:hover { background: #d45e1f; }
-    .btn-test:disabled { opacity: 0.5; cursor: not-allowed; }
-    .test-result { font-size: 12px; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px; display: none; }
-    .test-result--ok  { background: #e6f4ec; color: #2d6b45; display: block; }
-    .test-result--err { background: #fce8e8; color: #8b2020; display: block; }
     .popup__footer { text-align: center; padding-top: 12px; border-top: 1px solid #e2ddd5; font-size: 11px; color: #8a7e6e; }
   </style>
 </head>
@@ -40,16 +30,11 @@
       <span class="popup__logo">🏠💬</span>
       <div>
         <div class="popup__title">Funda Reacties</div>
-        <div class="popup__subtitle">v0.8.7 · community edition</div>
+        <div class="popup__subtitle">v1.0.0 · community edition</div>
       </div>
     </div>
 
     <div class="popup__status popup__status--active" id="status">Bezig met laden…</div>
-
-    <div class="popup__stats">
-      <div class="stat"><div class="stat__value" id="stat-comments">—</div><div class="stat__label">Reacties geplaatst</div></div>
-      <div class="stat"><div class="stat__value" id="stat-properties">—</div><div class="stat__label">Woningen bekeken</div></div>
-    </div>
 
     <div class="popup__section">
       <div class="popup__section-title">Gebruiker</div>
@@ -63,12 +48,6 @@
       <div class="diag-row"><span>Extensie actief</span><span class="diag-badge diag-badge--ok">✓ OK</span></div>
       <div class="diag-row"><span>Notificaties</span><span class="diag-badge" id="diag-notif">…</span></div>
       <div class="diag-row"><span>Database verbinding</span><span class="diag-badge" id="diag-supabase">…</span></div>
-    </div>
-
-    <div class="popup__section">
-      <div class="popup__section-title">Test notificaties</div>
-      <button class="btn-test" id="btn-test-notif">🔔 Stuur een testnotificatie</button>
-      <div class="test-result" id="test-result"></div>
     </div>
 
     <div class="popup__footer">Door de community, voor de community</div>
