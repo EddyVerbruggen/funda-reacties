@@ -126,7 +126,6 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 
 ### Toekomstige features (v0.6+)
 
-- [ ] Google Sign-In (optioneel, voor persistent profiel)
 - [ ] Buurt-aggregatie uitbreiden met regio en provincie
 - [ ] Moderatie (rapporteer-knop, automatische spam-detectie)
 - [ ] Favorieten-monitoring — notificatie als er een reactie komt op je favoriet

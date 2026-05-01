@@ -11,6 +11,11 @@
 -- Voer dit uit in Supabase > SQL Editor
 -- ============================================================================
 
+-- ---- Comments: voeg DELETE policy toe ----
+DROP POLICY IF EXISTS "Comments can be deleted by everyone" ON comments;
+CREATE POLICY "Comments can be deleted by everyone"
+  ON comments FOR DELETE USING (true);
+
 -- ---- Emoji Reactions: verwijder oude policy, maak open policy ----
 DROP POLICY IF EXISTS "Users can delete their own emoji reactions" ON emoji_reactions;
 CREATE POLICY "Emoji reactions can be deleted by everyone"

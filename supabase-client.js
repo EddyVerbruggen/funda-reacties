@@ -5,6 +5,9 @@
 const SUPABASE_URL = 'https://xjniqvdfwnsvsuuteakt.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqbmlxdmRmd25zdnN1dXRlYWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NDgxNjIsImV4cCI6MjA5MzAyNDE2Mn0.Dr-t4SIBaZMYu2nn1553S1VzaSCm2bcnxCcAzue_xKo';
 
+const DEBUG = true;
+function dbg(...args) { if (DEBUG) console.log('[Funda Reacties]', ...args); }
+
 const { createClient } = supabase;
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -35,9 +38,7 @@ function detectFundaEmailFromPage() {
     // Zoek alle inline <script> tags naar __NUXT_DATA__ of een script
     // dat een e-mailadres bevat in de context van Funda account-data.
     const scripts = document.querySelectorAll('script[id="__NUXT_DATA__"]');
-    console.log(">> 1");
     for (const script of scripts) {
-      console.log(">> 2");
       const src = script.textContent || '';
       // Zoek naar e-mailadres dat direct na "email" in de JSON staat.
       // Patroon: ,"email@domain.tld", (omringd door komma's en aanhalingstekens)
@@ -273,6 +274,52 @@ async function postComment(propertyId, text, name, askingPrice, userId) {
     if (error) { console.error('Error posting comment:', error); return null; }
     return data;
   } catch (error) { console.error('Error in postComment:', error); return null; }
+}
+
+async function deleteComment(commentId, userId) {
+  try {
+    dbg('[deleteComment] Starting delete for commentId:', commentId, 'userId:', userId);
+
+    // Verify ownership: fetch comment and check user_id
+    const { data: comment, error: fetchError } = await supabaseClient
+      .from('comments').select('user_id').eq('id', commentId).single();
+
+    if (fetchError) {
+      dbg('[deleteComment] Fetch error:', fetchError);
+      console.error('Error fetching comment:', fetchError);
+      return false;
+    }
+
+    if (!comment) {
+      dbg('[deleteComment] Comment not found');
+      console.error('Comment not found');
+      return false;
+    }
+
+    dbg('[deleteComment] Comment fetched, user_id:', comment.user_id, 'current userId:', userId);
+
+    if (comment.user_id !== userId) {
+      dbg('[deleteComment] Unauthorized: not comment owner');
+      console.error('Unauthorized: not comment owner');
+      return false;
+    }
+
+    dbg('[deleteComment] Deleting comment ' + commentId);
+    const { error } = await supabaseClient.from('comments').delete().eq('id', commentId);
+
+    if (error) {
+      dbg('[deleteComment] Delete error:', error);
+      console.error('Error deleting comment:', error);
+      return false;
+    }
+
+    dbg('[deleteComment] Delete successful');
+    return true;
+  } catch (error) {
+    dbg('[deleteComment] Exception:', error);
+    console.error('Error in deleteComment:', error);
+    return false;
+  }
 }
 
 async function voteComment(commentId, userId, voteType) {

@@ -311,6 +311,7 @@
 .fr-compose__submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ---- Comments List ---- */
+.fr-comments-wrapper { max-height: 630px; overflow-y: auto; position: relative; border-bottom: 1px solid var(--fr-border); }
 .fr-comments { list-style: none; margin: 0; padding: 0; }
 
 .fr-comment {
@@ -320,6 +321,25 @@
 }
 
 .fr-comment:last-child { border-bottom: none; }
+
+.fr-load-more-btn {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--fr-bg-alt);
+  border: 1px solid var(--fr-border);
+  border-radius: 0;
+  font-family: var(--fr-font);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-accent);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.fr-load-more-btn:hover { background: var(--fr-bg-hover); }
+.fr-load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; color: var(--fr-text-muted); }
 .fr-comment:hover { background: var(--fr-bg-alt); }
 
 /* Eigen comment: licht gemarkeerd */
@@ -353,6 +373,22 @@
   color: var(--fr-accent);
   border: 1px solid var(--fr-accent);
   letter-spacing: 0.3px;
+}
+
+.fr-comment__delete-btn {
+  background: none;
+  border: none;
+  color: var(--fr-text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.fr-comment__delete-btn:hover {
+  color: var(--fr-downvote);
 }
 
 .fr-comment__body { font-size: 14px; line-height: 1.55; margin: 0 0 8px 36px; color: var(--fr-text); }
@@ -417,6 +453,8 @@
 .fr-price-change__pct { font-weight: 700; margin-top: 2px; }
 
 /* ---- Empty State ---- */
+.fr-comments-empty { padding: 32px 20px; text-align: center; color: var(--fr-text-muted); }
+
 .fr-empty { padding: 32px 20px; text-align: center; color: var(--fr-text-muted); }
 .fr-empty__icon { font-size: 36px; margin-bottom: 8px; }
 .fr-empty__text { font-size: 14px; margin: 0; }

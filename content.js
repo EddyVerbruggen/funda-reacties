@@ -9,6 +9,8 @@
   let currentUserId = null;
   let currentDisplayName = null;
   let realtimeChannel = null;
+  let allComments = []; // Track all comments for pagination
+  let commentsDisplayed = 10; // Initial batch size
 
   // ---- Helpers ----
 
@@ -384,9 +386,13 @@
           </div>
         </div>
 
-        <ul class="fr-comments" id="fr-comments-list">
-          ${renderComments(data.comments, neighborhoodGroups)}
-        </ul>
+        <div class="fr-comments-wrapper${data.comments.length > 10 ? " fr-scrollable" : ""}" id="fr-comments-wrapper">
+          <ul class="fr-comments" id="fr-comments-list">
+            ${renderComments(data.comments, true)}
+          </ul>
+        </div>
+
+        ${renderNeighborhoodGroups(neighborhoodGroups, data.comments.length > 0)}
 
         <div class="fr-footer">Funda Reacties - voor en door de community</div>
       </div>
@@ -407,54 +413,71 @@
     return `<div class="fr-price-change ${cls}"><div class="fr-price-change__old">Vraagprijs destijds ${escapeHtml(commentPrice)}</div><div class="fr-price-change__pct">${sign}${pct}%</div></div>`;
   }
 
-  function renderComments(comments, neighborhoodGroups) {
-    const hasNeighborhood = neighborhoodGroups && neighborhoodGroups.length > 0;
+  function renderComments(comments, isFirstRender = false) {
+    // Store all comments for pagination (only on first render)
+    if (isFirstRender) {
+      allComments = comments;
+      commentsDisplayed = Math.min(10, comments.length);
+    }
+
     const hasOwn = comments.length > 0;
     const currentPrice = getAskingPrice();
 
-    if (!hasOwn && !hasNeighborhood) {
-      return `<li class="fr-empty"><div class="fr-empty__icon">🏠</div><p class="fr-empty__text">Nog geen reacties — wees de eerste!</p></li>`;
+    if (!hasOwn) {
+      return `<div class="fr-comments-empty"><div class="fr-empty__icon">🏠</div><p class="fr-empty__text">Nog geen reacties — wees de eerste!</p></div>`;
     }
 
-    const ownHtml = comments.map((c) => {
+    const visibleComments = comments.slice(0, commentsDisplayed);
+    const hasMoreComments = comments.length > commentsDisplayed;
+
+    const ownHtml = visibleComments.map((c) => {
       const bg = avatarColor(c.name);
       const initial = c.name.charAt(0).toUpperCase();
       const myVote = c.myVote || null;
       const priceTag = renderPriceChange(c.askingPrice, currentPrice);
       const ownBadge = c.isOwn ? `<span class="fr-comment__own-badge">jij</span>` : "";
+      const disabledUpBtn = c.isOwn ? "disabled" : "";
+      const disabledDownBtn = c.isOwn ? "disabled" : "";
+      const deleteBtn = c.isOwn ? `<button class="fr-comment__delete-btn" data-comment="${c.id}" title="Verwijderen">✕</button>` : "";
       return `
-        <li class="fr-comment${c.isOwn ? " fr-comment--own" : ""}" data-id="${c.id}">
+        <li class="fr-comment${c.isOwn ? " fr-comment--own" : ""}" data-id="${c.id}" data-is-own="${c.isOwn ? "true" : "false"}">
           <div class="fr-comment__top">
             <div class="fr-comment__avatar" style="background:${bg}22;color:${bg}">${initial}</div>
             <span class="fr-comment__name">${escapeHtml(c.name)}</span>
             ${ownBadge}
             <span class="fr-comment__time">${timeAgo(c.time)}</span>
+            ${deleteBtn}
           </div>
           <p class="fr-comment__body">${escapeHtml(c.text)}</p>${priceTag}
           <div class="fr-comment__footer">
-            <button class="fr-vote-btn fr-vote-btn--up${myVote === "up" ? " active" : ""}" data-vote="up" data-comment="${c.id}">▲ <span>${c.upvotes}</span></button>
-            <button class="fr-vote-btn fr-vote-btn--down${myVote === "down" ? " active" : ""}" data-vote="down" data-comment="${c.id}">▼ <span>${c.downvotes}</span></button>
+            <button class="fr-vote-btn fr-vote-btn--up${myVote === "up" ? " active" : ""}" data-vote="up" data-comment="${c.id}" ${disabledUpBtn}>▲ <span>${c.upvotes}</span></button>
+            <button class="fr-vote-btn fr-vote-btn--down${myVote === "down" ? " active" : ""}" data-vote="down" data-comment="${c.id}" ${disabledDownBtn}>▼ <span>${c.downvotes}</span></button>
           </div>
         </li>`;
     }).join("");
 
-    return ownHtml + (hasNeighborhood ? renderNeighborhoodGroups(neighborhoodGroups, hasOwn) : "");
+    const loadMoreBtn = hasMoreComments ? `<button class="fr-load-more-btn" id="fr-load-more">Meer reacties laden (${comments.length - commentsDisplayed} meer)</button>` : "";
+
+    return ownHtml + loadMoreBtn;
   }
 
   function renderNeighborhoodGroups(groups, ownCommentsExist) {
+    if (!groups || groups.length === 0) return "";
     const totalCount = groups.reduce((n, g) => n + g.comments.length, 0);
     const intro = ownCommentsExist
       ? (totalCount === 1 ? "Ook een reactie" : `Ook ${totalCount} reacties`) + " op andere woningen in de omgeving:"
       : "Nog geen reacties op deze woning. " + (totalCount === 1 ? "Dit is een reactie" : `Dit zijn ${totalCount} reacties`) + " op andere woningen in de omgeving.";
 
     return `
-      <li class="fr-neighborhood">
-        <div class="fr-neighborhood__header"><span>📍 Reacties uit de buurt</span></div>
-        <p class="fr-neighborhood__intro">${escapeHtml(intro)}</p>
-        <ul class="fr-neighborhood__list">
-          ${groups.map((g) => g.comments.map((c) => renderNeighborhoodComment(c, g.scope)).join("")).join("")}
-        </ul>
-      </li>`;
+      <ul class="fr-comments" style="border-top: 1px solid var(--fr-border);">
+        <li class="fr-neighborhood">
+          <div class="fr-neighborhood__header"><span>📍 Reacties uit de buurt</span></div>
+          <p class="fr-neighborhood__intro">${escapeHtml(intro)}</p>
+          <ul class="fr-neighborhood__list">
+            ${groups.map((g) => g.comments.map((c) => renderNeighborhoodComment(c, g.scope)).join("")).join("")}
+          </ul>
+        </li>
+      </ul>`;
   }
 
   function renderNeighborhoodComment(c, scope) {
@@ -591,14 +614,14 @@
       });
 
       textarea.addEventListener("input", () => {
-        submitBtn.disabled = textarea.value.trim().length === 0;
+        submitBtn.disabled = textarea.value.trim().length === 0 || textarea.value.length > 1000;
         textarea.style.height = "auto";
         textarea.style.height = textarea.scrollHeight + "px";
       });
 
       submitBtn.addEventListener("click", async () => {
         const text = textarea.value.trim();
-        if (!text) return;
+        if (!text || text.length > 1000) return;
 
         // Sla eventuele naamswijziging op vóór plaatsen
         const typedName = nameInput.value.trim();
@@ -616,8 +639,19 @@
           const freshData = await loadReactions(propertyId);
           const neighborhoodGroups = await findNeighborhoodComments(propertyId, freshData.location);
           const list = root.querySelector("#fr-comments-list");
-          list.innerHTML = renderComments(freshData.comments, neighborhoodGroups);
+          const wrapper = root.querySelector("#fr-comments-wrapper");
+          // Always call with isFirstRender=true to reset commentsDisplayed and show all loaded comments
+          allComments = freshData.comments;
+          commentsDisplayed = Math.min(10, freshData.comments.length);
+          list.innerHTML = renderComments(freshData.comments, false);
+          wrapper.classList.toggle("fr-scrollable", freshData.comments.length > 10);
+          const neighborhoodHtml = renderNeighborhoodGroups(neighborhoodGroups, freshData.comments.length > 0);
+          if (neighborhoodHtml && !root.querySelector(".fr-neighborhood")) {
+            list.parentElement.insertAdjacentHTML("afterend", neighborhoodHtml);
+          }
           attachVoteEvents(root, propertyId);
+          attachDeleteEvents(root, propertyId);
+          attachLoadMoreHandler(root, propertyId);
           root.querySelector(".fr-header__count").textContent = `${freshData.comments.length} reactie${freshData.comments.length !== 1 ? "s" : ""}`;
           chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: freshData.comments.length });
         } else {
@@ -631,6 +665,8 @@
       });
 
       attachVoteEvents(root, propertyId);
+      attachDeleteEvents(root, propertyId);
+      attachLoadMoreHandler(root, propertyId);
       setupRealtimeSubscription(root, propertyId);
     });
   }
@@ -648,13 +684,50 @@
         });
       } catch (e) { dbg("Notification error:", e); }
 
+      // Kleine delay zodat Supabase realtime updates kan verwerken
+      await new Promise(resolve => setTimeout(resolve, 200));
       const freshData = await loadReactions(propertyId);
       const neighborhoodGroups = await findNeighborhoodComments(propertyId, freshData.location);
       const list = root.querySelector("#fr-comments-list");
-      if (list) { list.innerHTML = renderComments(freshData.comments, neighborhoodGroups); attachVoteEvents(root, propertyId); }
+      if (list) { 
+        allComments = freshData.comments;
+        commentsDisplayed = Math.min(10, freshData.comments.length);
+        list.innerHTML = renderComments(freshData.comments, false); 
+        attachVoteEvents(root, propertyId);
+        attachDeleteEvents(root, propertyId);
+      }
       const countEl = root.querySelector(".fr-header__count");
       if (countEl) countEl.textContent = `${freshData.comments.length} reactie${freshData.comments.length !== 1 ? "s" : ""}`;
       chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: freshData.comments.length });
+    });
+  }
+
+  function attachDeleteEvents(root, propertyId) {
+    const userId = currentUserId;
+    root.querySelectorAll(".fr-comment__delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Weet je zeker dat je deze reactie wilt verwijderen?")) return;
+        const commentId = btn.dataset.comment;
+        const success = await deleteComment(commentId, userId);
+        if (success) {
+          // Wacht even tot Supabase de delete heeft verwerkt
+          await new Promise(resolve => setTimeout(resolve, 300));
+          const freshData = await loadReactions(propertyId);
+          const list = root.querySelector("#fr-comments-list");
+          const wrapper = root.querySelector("#fr-comments-wrapper");
+          allComments = freshData.comments;
+          commentsDisplayed = Math.min(10, freshData.comments.length);
+          list.innerHTML = renderComments(freshData.comments, false);
+          wrapper.classList.toggle("fr-scrollable", freshData.comments.length > 10);
+          attachVoteEvents(root, propertyId);
+          attachDeleteEvents(root, propertyId);
+          attachLoadMoreHandler(root, propertyId);
+          root.querySelector(".fr-header__count").textContent = `${freshData.comments.length} reactie${freshData.comments.length !== 1 ? "s" : ""}`;
+          chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: freshData.comments.length });
+        } else {
+          alert("Fout bij verwijderen van reactie. Check je internet connectie.");
+        }
+      });
     });
   }
 
@@ -662,9 +735,12 @@
     const userId = currentUserId;
     root.querySelectorAll(".fr-vote-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
+        const commentEl = btn.closest(".fr-comment");
+        if (!commentEl) return;
+        const isOwn = commentEl.dataset.isOwn === "true";
+        if (isOwn) return;
         const commentId = btn.dataset.comment;
         const direction = btn.dataset.vote;
-        const commentEl = btn.closest(".fr-comment");
         const upBtn = commentEl.querySelector('.fr-vote-btn--up');
         const downBtn = commentEl.querySelector('.fr-vote-btn--down');
         if (btn.classList.contains("active")) { btn.classList.remove("active"); }
@@ -672,6 +748,21 @@
         const result = await voteComment(commentId, userId, direction);
         if (result) { upBtn.querySelector("span").textContent = result.upvotes; downBtn.querySelector("span").textContent = result.downvotes; }
       });
+    });
+  }
+
+  function attachLoadMoreHandler(root, propertyId) {
+    const loadMoreBtn = root.querySelector("#fr-load-more");
+    if (!loadMoreBtn) return;
+
+    loadMoreBtn.addEventListener("click", () => {
+      commentsDisplayed += 10;
+      const list = root.querySelector("#fr-comments-list");
+      const wrapper = root.querySelector("#fr-comments-wrapper");
+      list.innerHTML = renderComments(allComments);
+      wrapper.classList.toggle("fr-scrollable", allComments.length > 10);
+      attachVoteEvents(root, propertyId);
+      attachLoadMoreHandler(root, propertyId);
     });
   }
 
