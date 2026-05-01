@@ -871,6 +871,7 @@
       placeholder.replaceWith(panel);
       if (agentPanel) { panel.style.marginTop = "0"; panel.style.marginBottom = "16px"; }
       attachEvents(panel);
+      watchLoginState(panel);
       const data = await loadReactions(getPropertyId());
       chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: data.comments.length });
       dbg("✅ Panel fully rendered");
@@ -881,6 +882,92 @@
       const commentsList = placeholder.querySelector(".fr-comments");
       if (commentsList) commentsList.innerHTML = `<li class="fr-empty"><div class="fr-empty__icon">⚠️</div><p class="fr-empty__text">Fout bij laden: ${escapeHtml(error.message)}</p></li>`;
     }
+  }
+
+  // ---- Login state detectie via SSR HTML ----
+  // Funda rendert de header server-side. We hoeven dus niet te observeren:
+  // bij het laden van de pagina staat ofwel de 'Inloggen' submit-knop in de HTML
+  // (niet ingelogd), ofwel de Account-knop met aria-label (ingelogd).
+  // We checken dit eenmalig en fetchen het account als ingelogd.
+
+  function isLoggedInFromDOM() {
+    // Ingelogd: de header bevat een knop met aria-label="Open menu item"
+    // Niet ingelogd: er is een <button type="submit"> met een <span>Inloggen</span>
+    const accountBtn = document.querySelector('button[aria-label="Open menu item"]');
+    if (accountBtn) return true;
+    const spans = document.querySelectorAll('button[type="submit"] span');
+    for (const span of spans) {
+      if (span.textContent.trim() === 'Inloggen') return false;
+    }
+    // Fallback: geen van beide gevonden, beschouw als niet ingelogd
+    return false;
+  }
+
+  async function applyProfileToPanel(root, profile) {
+    if (!profile.fundaEmail) return;
+
+    currentUserId = profile.userId;
+    currentDisplayName = profile.displayName;
+    dbg('Profiel toegepast op paneel:', profile);
+
+    // Migreer anonieme comments naar Funda-account als er een previousUserId is
+    chrome.storage.local.get(['previousUserId'], async ({ previousUserId }) => {
+      if (previousUserId && previousUserId !== profile.userId) {
+        await migrateAnonymousData(previousUserId, profile.userId, profile.displayName);
+        // Herlaad comments zodat gemigreerde comments de juiste eigenaar tonen
+        const propertyId = getPropertyId();
+        const freshData = await loadReactions(propertyId);
+        const list = root.querySelector('#fr-comments-list');
+        if (list) {
+          allComments = freshData.comments;
+          commentsDisplayed = Math.min(10, freshData.comments.length);
+          list.innerHTML = renderComments(freshData.comments, false);
+          attachVoteEvents(root, propertyId);
+          attachDeleteEvents(root, propertyId);
+          attachLoadMoreHandler(root, propertyId);
+        }
+      }
+    });
+
+    const nameInput = root.querySelector('#fr-name-input');
+    if (nameInput) nameInput.value = currentDisplayName;
+
+    const avatarEl = root.querySelector('.fr-compose__avatar');
+    if (avatarEl) {
+      const bg = avatarColor(currentDisplayName);
+      avatarEl.style.background = `${bg}22`;
+      avatarEl.style.color = bg;
+      avatarEl.textContent = currentDisplayName.charAt(0).toUpperCase();
+    }
+  }
+
+  async function checkLoginAndUpdatePanel(root) {
+    const loggedIn = isLoggedInFromDOM();
+    dbg('Login check via DOM:', loggedIn);
+
+    if (!loggedIn) return;
+
+    // Gebruiker is ingelogd: haal profiel op via /account/ fetch
+    // maar alleen als we nog geen fundaEmail hebben opgeslagen
+    chrome.storage.local.get(['fundaEmail'], async (stored) => {
+      if (stored.fundaEmail) {
+        dbg('fundaEmail al bekend:', stored.fundaEmail);
+        // Zorg dat het paneel ook de juiste naam toont
+        const profile = await getUserProfile();
+        await applyProfileToPanel(root, profile);
+        return;
+      }
+
+      // Nog geen email: wis cache en fetch opnieuw
+      try { sessionStorage.removeItem('funda_reacties_profile'); } catch (e) {}
+      const profile = await getUserProfile();
+      await applyProfileToPanel(root, profile);
+    });
+  }
+
+  function watchLoginState(root) {
+    // Eenmalige check op basis van SSR HTML
+    checkLoginAndUpdatePanel(root);
   }
 
   let retryCount = 0;

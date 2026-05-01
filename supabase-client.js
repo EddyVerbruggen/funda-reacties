@@ -407,3 +407,43 @@ function subscribeToPropertyUpdates(propertyId, userId, onNewComment) {
 function unsubscribeFromPropertyUpdates(channel) {
   if (channel) supabaseClient.removeChannel(channel);
 }
+
+// ==========================================================================
+// Account Migratie — koppel anonieme comments aan Funda-account
+// ==========================================================================
+
+/**
+ * Migreert comments en emoji-reacties van een anoniem user_id naar
+ * het Funda-account user_id. Wordt eenmalig aangeroepen direct na
+ * login-detectie als er een previousUserId bekend is.
+ *
+ * Roept de Supabase RPC-functie migrate_anonymous_comments aan,
+ * die server-side de UPDATE uitvoert met SECURITY DEFINER.
+ *
+ * Na succesvolle migratie wordt previousUserId gewist uit storage.
+ */
+async function migrateAnonymousData(anonId, fundaId, displayName) {
+  if (!anonId || !fundaId || anonId === fundaId) return;
+
+  dbg('[migrate] Start migratie:', anonId, '→', fundaId);
+
+  try {
+    const { data, error } = await supabaseClient.rpc('migrate_anonymous_comments', {
+      p_anon_id:  anonId,
+      p_funda_id: fundaId,
+      p_new_name: displayName || '',
+    });
+
+    if (error) {
+      console.error('[Funda Reacties] Migratie mislukt:', error);
+      return;
+    }
+
+    dbg('[migrate] Resultaat:', data);
+
+    // Wis previousUserId zodat we niet nogmaals migreren
+    chrome.storage.local.remove('previousUserId');
+  } catch (e) {
+    console.error('[Funda Reacties] Migratie exception:', e);
+  }
+}
