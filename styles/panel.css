@@ -549,3 +549,33 @@
 @keyframes fr-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 @import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700&display=swap');
+
+/* ---- Prijswijziging banner ---- */
+.fr-price-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 14px 2px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.fr-price-banner--down {
+  background: #e6f4ec;
+  border: 1px solid #b8dfc8;
+  color: #1f5c38;
+}
+.fr-price-banner--up {
+  background: #fef3ec;
+  border: 1px solid #f0c8a8;
+  color: #7a3a10;
+}
+.fr-price-banner__arrow {
+  font-size: 18px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.fr-price-banner__text {
+  flex: 1;
+}

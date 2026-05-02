@@ -10,6 +10,7 @@
   let currentDisplayName = null;
   let realtimeChannel = null;
   let allComments = []; // Track all comments for pagination
+  let allPriceHistory = []; // Track price history for renderPriceChange
   let commentsDisplayed = 10; // Initial batch size
 
   // ---- Helpers ----
@@ -176,6 +177,11 @@
     return isNaN(num) ? null : num;
   }
 
+  function formatPrice(num) {
+    if (!num) return null;
+    return "€\u00a0" + num.toLocaleString("nl-NL");
+  }
+
   function timeAgo(dateString) {
     const diff = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
     if (diff < 60) return "zojuist";
@@ -333,6 +339,33 @@
   async function loadReactions(propertyId) {
     const userId = currentUserId;
     await upsertProperty(propertyId, getPropertyAddress(), getPropertyUrl(), getPropertyLocation());
+    // Registreer de huidige vraagprijs als die veranderd is
+    const currentPriceText = getAskingPrice();
+    const currentPriceNum  = parsePrice(currentPriceText);
+    const currentPricePerM2 = (() => {
+      const dts = document.querySelectorAll('dt');
+      for (const dt of dts) {
+        const label = (dt.textContent || '').trim().toLowerCase();
+        if (label.startsWith('wonen') || label.startsWith('woonoppervlakte') || label.startsWith('gebruiksoppervlakte wonen')) {
+          const dd = dt.nextElementSibling;
+          if (dd && dd.tagName === 'DD') {
+            const m = (dd.textContent || '').match(/([\d.,]+)\s*m/i);
+            if (m) {
+              const area = parseInt(m[1].replace(/\./g, ''), 10);
+              if (area > 0 && currentPriceNum > 0) return Math.round(currentPriceNum / area);
+            }
+          }
+        }
+      }
+      return null;
+    })();
+    if (currentPriceNum && /^\d{6,}$/.test(propertyId)) {
+      recordPriceIfChanged(propertyId, currentPriceNum, currentPricePerM2)
+        .then(r => { if (r.inserted) dbg('Nieuwe prijs geregistreerd:', currentPriceNum); })
+        .catch(() => {});
+    }
+    // Haal de prijshistorie op voor prijswijziging-banner en per-comment vergelijking
+    const priceHistory = await getLastKnownPrice(propertyId);
     // trackPropertyView wordt NIET hier aangeroepen — dat gebeurt eenmalig
     // vanuit inject() nadat het profiel definitief bekend is.
 
@@ -351,10 +384,10 @@
       const upvotes = (c.votes || []).filter(v => v.vote_type === 'up').length;
       const downvotes = (c.votes || []).filter(v => v.vote_type === 'down').length;
       const myVote = (c.votes || []).find(v => v.user_id === userId);
-      return { id: c.id, name: c.name, text: c.text, time: c.created_at, askingPrice: c.asking_price, isAi: c.is_ai || false, upvotes, downvotes, myVote: myVote ? myVote.vote_type : null, isOwn: c.user_id === userId };
+      return { id: c.id, name: c.name, text: c.text, time: c.created_at, upvotes, downvotes, myVote: myVote ? myVote.vote_type : null, isOwn: c.user_id === userId };
     });
 
-    return { address: getPropertyAddress(), url: getPropertyUrl(), location: getPropertyLocation(), emojis, comments };
+    return { address: getPropertyAddress(), url: getPropertyUrl(), location: getPropertyLocation(), emojis, comments, priceHistory: priceHistory || [] };
   }
 
   // ---- Neighborhood ----
@@ -406,6 +439,8 @@
     const root = document.createElement("div");
     root.id = "funda-reacties-root";
 
+    const priceChangeBanner = renderPriceChangeBanner(data.priceHistory);
+
     root.innerHTML = `
       <div class="fr-container">
         <div class="fr-header">
@@ -436,6 +471,8 @@
           ${insights.map((i) => `<span class="fr-insight-chip"><span class="fr-insight-chip__icon">${i.icon}</span>${i.text}</span>`).join("")}
         </div>
 
+        ${priceChangeBanner}
+
         <div class="fr-compose">
           <div class="fr-compose__wrapper">
             <div class="fr-compose__avatar" style="background:${myColor}22;color:${myColor}">${myInitial}</div>
@@ -462,11 +499,11 @@
 
         <div class="fr-comments-wrapper${data.comments.length > 10 ? " fr-scrollable" : ""}" id="fr-comments-wrapper">
           <ul class="fr-comments" id="fr-comments-list">
-            ${renderComments(data.comments, true)}
+            ${renderComments(data.comments, true, data.priceHistory)}
           </ul>
         </div>
 
-        ${renderNeighborhoodGroups(neighborhoodGroups, data.comments.filter(c => !c.isAi).length > 0)}
+        ${renderNeighborhoodGroups(neighborhoodGroups, data.comments.length > 0)}
 
         ${renderWhispers(getPropertyDataForWhisper())}
 
@@ -477,27 +514,57 @@
     return root;
   }
 
-  function renderPriceChange(commentPrice, currentPrice) {
-    if (!commentPrice || !currentPrice) return "";
-    const then = parsePrice(commentPrice);
-    const now = parsePrice(currentPrice);
-    if (!then || !now || then === now) return "";
-    const diff = now - then;
-    const pct = ((diff / then) * 100).toFixed(0);
-    const sign = diff > 0 ? "+" : "";
-    const cls = diff > 0 ? "fr-price-change--up" : "fr-price-change--down";
-    return `<div class="fr-price-change ${cls}"><div class="fr-price-change__old">Vraagprijs destijds ${escapeHtml(commentPrice)}</div><div class="fr-price-change__pct">${sign}${pct}%</div></div>`;
+  /**
+   * Toont een banner als de vraagprijs veranderd is t.o.v. de vorige keer dat
+   * de extensie de woning bezocht heeft.
+   */
+  function renderPriceChangeBanner(priceHistory) {
+    if (!priceHistory || priceHistory.length < 2) return "";
+    const [latest, previous] = priceHistory;
+    if (!latest.price || !previous.price) return "";
+    if (latest.price === previous.price) return "";
+    const diff  = latest.price - previous.price;
+    const pct   = ((diff / previous.price) * 100).toFixed(1);
+    const sign  = diff > 0 ? "+" : "";
+    const arrow = diff > 0 ? "\u2191" : "\u2193";
+    const cls   = diff > 0 ? "fr-price-banner--up" : "fr-price-banner--down";
+    const prevFmt = formatPrice(previous.price);
+    const nowFmt  = formatPrice(latest.price);
+    const dateStr = new Date(previous.recorded_at).toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
+    return `<div class="fr-price-banner ${cls}">
+      <span class="fr-price-banner__arrow">${arrow}</span>
+      <span class="fr-price-banner__text">Vraagprijs veranderd: ${escapeHtml(prevFmt)} \u2192 ${escapeHtml(nowFmt)} <strong>(${sign}${pct}%)</strong> t.o.v.\u00a0${escapeHtml(dateStr)}</span>
+    </div>`;
   }
 
-  function renderComments(comments, isFirstRender = false) {
+  /**
+   * Toont bij een comment of de vraagprijs veranderd is t.o.v. het moment van plaatsen.
+   * Zoekt in de price history de entry die gold op commentTime (nieuwste entry ≤ commentTime),
+   * en vergelijkt die met de huidige prijs (eerste entry in history = meest recent).
+   */
+  function renderPriceChange(commentTime, priceHistory) {
+    if (!priceHistory || priceHistory.length === 0) return "";
+    const commentTs = new Date(commentTime).getTime();
+    const atComment = priceHistory.find(h => new Date(h.recorded_at).getTime() <= commentTs);
+    const current   = priceHistory[0];
+    if (!atComment || !current || !atComment.price || !current.price) return "";
+    if (atComment.price === current.price) return "";
+    const diff = current.price - atComment.price;
+    const pct  = ((diff / atComment.price) * 100).toFixed(0);
+    const sign = diff > 0 ? "+" : "";
+    const cls  = diff > 0 ? "fr-price-change--up" : "fr-price-change--down";
+    return `<div class="fr-price-change ${cls}"><div class="fr-price-change__old">Vraagprijs destijds ${escapeHtml(formatPrice(atComment.price))}</div><div class="fr-price-change__pct">${sign}${pct}%</div></div>`;
+  }
+
+  function renderComments(comments, isFirstRender = false, priceHistory = []) {
     // Store all comments for pagination (only on first render)
     if (isFirstRender) {
       allComments = comments;
+      allPriceHistory = priceHistory;
       commentsDisplayed = Math.min(10, comments.length);
     }
 
     const hasOwn = comments.length > 0;
-    const currentPrice = getAskingPrice();
 
     if (!hasOwn) {
       return `<div class="fr-comments-empty"><div class="fr-empty__icon">🏠</div><p class="fr-empty__text">Nog geen reacties — wees de eerste!</p></div>`;
@@ -510,7 +577,7 @@
       const bg = avatarColor(c.name);
       const initial = c.name.charAt(0).toUpperCase();
       const myVote = c.myVote || null;
-      const priceTag = renderPriceChange(c.askingPrice, currentPrice);
+      const priceTag = renderPriceChange(c.time, priceHistory);
       const ownBadge = c.isOwn ? `<span class="fr-comment__own-badge">jij</span>` : "";
       const disabledUpBtn = c.isOwn ? "disabled" : "";
       const disabledDownBtn = c.isOwn ? "disabled" : "";
@@ -737,17 +804,17 @@
           return;
         }
 
-        const newComment = await postComment(propertyId, sanitizedText, currentDisplayName, getAskingPrice(), currentUserId);
+        const newComment = await postComment(propertyId, sanitizedText, currentDisplayName, currentUserId);
 
         if (newComment) {
           const freshData = await loadReactions(propertyId);
           const neighborhoodGroups = await findNeighborhoodComments(propertyId, freshData.location);
           const list = root.querySelector("#fr-comments-list");
           const wrapper = root.querySelector("#fr-comments-wrapper");
-          // Always call with isFirstRender=true to reset commentsDisplayed and show all loaded comments
           allComments = freshData.comments;
+          allPriceHistory = freshData.priceHistory;
           commentsDisplayed = Math.min(10, freshData.comments.length);
-          list.innerHTML = renderComments(freshData.comments, false);
+          list.innerHTML = renderComments(freshData.comments, false, freshData.priceHistory);
           wrapper.classList.toggle("fr-scrollable", freshData.comments.length > 10);
           const neighborhoodHtml = renderNeighborhoodGroups(neighborhoodGroups, freshData.comments.length > 0);
           if (neighborhoodHtml && !root.querySelector(".fr-neighborhood")) {
@@ -791,12 +858,12 @@
       // Kleine delay zodat Supabase realtime updates kan verwerken
       await new Promise(resolve => setTimeout(resolve, 200));
       const freshData = await loadReactions(propertyId);
-      const neighborhoodGroups = await findNeighborhoodComments(propertyId, freshData.location);
       const list = root.querySelector("#fr-comments-list");
-      if (list) { 
+      if (list) {
         allComments = freshData.comments;
+        allPriceHistory = freshData.priceHistory;
         commentsDisplayed = Math.min(10, freshData.comments.length);
-        list.innerHTML = renderComments(freshData.comments, false); 
+        list.innerHTML = renderComments(freshData.comments, false, freshData.priceHistory);
         attachVoteEvents(root, propertyId);
         attachDeleteEvents(root, propertyId);
       }
@@ -820,8 +887,9 @@
           const list = root.querySelector("#fr-comments-list");
           const wrapper = root.querySelector("#fr-comments-wrapper");
           allComments = freshData.comments;
+          allPriceHistory = freshData.priceHistory;
           commentsDisplayed = Math.min(10, freshData.comments.length);
-          list.innerHTML = renderComments(freshData.comments, false);
+          list.innerHTML = renderComments(freshData.comments, false, freshData.priceHistory);
           wrapper.classList.toggle("fr-scrollable", freshData.comments.length > 10);
           attachVoteEvents(root, propertyId);
           attachDeleteEvents(root, propertyId);
@@ -863,7 +931,7 @@
       commentsDisplayed += 10;
       const list = root.querySelector("#fr-comments-list");
       const wrapper = root.querySelector("#fr-comments-wrapper");
-      list.innerHTML = renderComments(allComments);
+      list.innerHTML = renderComments(allComments, false, allPriceHistory);
       wrapper.classList.toggle("fr-scrollable", allComments.length > 10);
       attachVoteEvents(root, propertyId);
       attachLoadMoreHandler(root, propertyId);
@@ -975,12 +1043,9 @@
       placeholder.replaceWith(panel);
       if (agentPanel) { panel.style.marginTop = "0"; panel.style.marginBottom = "16px"; }
       attachEvents(panel);
-      // Wacht op login-detectie zodat currentUserId definitief is vóórdat
-      // trackPropertyView wordt aangeroepen. Anders kan een anonieme users-rij
-      // worden aangemaakt die net na de migratie-delete opnieuw verschijnt.
       await watchLoginState(panel);
       const propertyId = getPropertyId();
-      if (/^\d{6,}$/.test(propertyId)) trackPropertyView(propertyId); // alleen echte property IDs tracken
+      if (/^\d{6,}$/.test(propertyId)) trackPropertyView(propertyId);
       const data = await loadReactions(getPropertyId());
       chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: data.comments.length });
       dbg("✅ Panel fully rendered");
@@ -993,30 +1058,19 @@
     }
   }
 
-  // ---- Login state detectie via SSR HTML ----
-  // Funda rendert de header server-side. We hoeven dus niet te observeren:
-  // bij het laden van de pagina staat ofwel de 'Inloggen' submit-knop in de HTML
-  // (niet ingelogd), ofwel de Account-knop met aria-label (ingelogd).
-  // We checken dit eenmalig en fetchen het account als ingelogd.
-
   function isLoggedInFromDOM() {
-    // Niet ingelogd: er staat een knop met de tekst 'Inloggen' in de header
     const spans = document.querySelectorAll('button[type="submit"] span');
     for (const span of spans) {
       if (span.textContent.trim() === 'Inloggen') return false;
     }
-    // Ingelogd: de header bevat een account-knop
     const accountBtn = document.querySelector('button[aria-label="Open menu item"]');
     if (accountBtn) return true;
-    // Fallback: onduidelijk, ga uit van niet ingelogd (veiligste keuze)
     return false;
   }
 
   async function applyProfileToPanel(root, profile, explicitPreviousUserId) {
     if (!profile.fundaEmail) return;
 
-    // Gebruik het expliciet meegegeven anonieme ID als dat er is,
-    // anders val terug op currentUserId (voor het geval we al wisten dat het anoniem was)
     const previousUserId = explicitPreviousUserId || currentUserId;
     currentUserId      = profile.userId;
     currentDisplayName = profile.displayName;
@@ -1026,21 +1080,19 @@
     if (previousUserId && previousUserId !== profile.userId) {
       console.log('[Funda Reacties] Migratie nodig: anoniem → Funda');
       await migrateAnonymousData(previousUserId, profile.userId, profile.displayName);
-      // Herlaad comments zodat gemigreerde comments de juiste eigenaar tonen
       const propertyId = getPropertyId();
       const freshData = await loadReactions(propertyId);
       const list = root.querySelector('#fr-comments-list');
       if (list) {
         allComments = freshData.comments;
+        allPriceHistory = freshData.priceHistory;
         commentsDisplayed = Math.min(10, freshData.comments.length);
-        list.innerHTML = renderComments(freshData.comments, false);
+        list.innerHTML = renderComments(freshData.comments, false, freshData.priceHistory);
         attachVoteEvents(root, propertyId);
         attachDeleteEvents(root, propertyId);
         attachLoadMoreHandler(root, propertyId);
       }
     } else {
-      // Geen anonieme sessie om te migreren — controleer toch via storage
-      // voor het geval previousUserId al gewist was maar migratie nog niet gedaan
       chrome.storage.local.get(['previousUserId'], async ({ previousUserId: storedPrev }) => {
         if (storedPrev && storedPrev !== profile.userId) {
           await migrateAnonymousData(storedPrev, profile.userId, profile.displayName);
@@ -1062,13 +1114,9 @@
 
   async function checkLoginAndUpdatePanel(root) {
     const loggedIn = isLoggedInFromDOM();
-
-    // Stap 1: al eerder ingelogd en opgeslagen in storage?
     const stored = await new Promise(resolve => chrome.storage.local.get(['fundaEmail'], resolve));
 
     if (stored.fundaEmail && !loggedIn) {
-      // Gebruiker was ingelogd maar is nu uitgelogd — storage opschonen
-      // zodat we niet meer proberen /account/ te fetchen.
       dbg('Uitgelogd gedetecteerd, storage opschonen');
       await new Promise(resolve => chrome.storage.local.remove(['fundaEmail', 'userId', 'displayName', 'previousUserId'], resolve));
       resetProfileCache();
@@ -1082,7 +1130,6 @@
       return;
     }
 
-    // Stap 2: geen email in storage, alleen fetchen als DOM bevestigt dat ingelogd
     if (!loggedIn) return;
 
     const anonUserId = currentUserId;

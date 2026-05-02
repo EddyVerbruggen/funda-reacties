@@ -1,10 +1,37 @@
 -- ============================================================================
 -- Funda Reacties Database Schema
--- Supabase PostgreSQL — v0.9.0
+-- Supabase PostgreSQL — v1.1.5
 -- ============================================================================
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================================================
+-- Drop everything (views, triggers, functions, tables) voor een schone start
+-- Volgorde: views → triggers → tabellen (omgekeerde FK-volgorde)
+-- ============================================================================
+
+DROP VIEW IF EXISTS comments_with_votes;
+DROP VIEW IF EXISTS emoji_counts;
+
+DROP TRIGGER IF EXISTS trigger_notify_on_comment   ON comments;
+DROP TRIGGER IF EXISTS trigger_notify_on_emoji     ON emoji_reactions;
+DROP TRIGGER IF EXISTS update_properties_updated_at ON properties;
+
+DROP FUNCTION IF EXISTS notify_on_reaction();
+DROP FUNCTION IF EXISTS update_updated_at_column();
+DROP FUNCTION IF EXISTS track_property_view(TEXT, TEXT, BOOLEAN, TEXT);
+DROP FUNCTION IF EXISTS migrate_anonymous_comments(TEXT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS record_price_if_changed(TEXT, TEXT, INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS record_price_if_changed(TEXT, INTEGER, INTEGER);
+
+DROP TABLE IF EXISTS email_notifications    CASCADE;
+DROP TABLE IF EXISTS votes                  CASCADE;
+DROP TABLE IF EXISTS property_price_history CASCADE;
+DROP TABLE IF EXISTS emoji_reactions        CASCADE;
+DROP TABLE IF EXISTS comments               CASCADE;
+DROP TABLE IF EXISTS properties             CASCADE;
+DROP TABLE IF EXISTS users                  CASCADE;
 
 -- ============================================================================
 -- Users Table (v0.9.0)
@@ -52,7 +79,6 @@ CREATE TABLE IF NOT EXISTS comments (
   user_id TEXT NOT NULL,
   name TEXT NOT NULL,
   text TEXT NOT NULL,
-  asking_price TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -75,6 +101,30 @@ CREATE TABLE IF NOT EXISTS emoji_reactions (
 
 CREATE INDEX IF NOT EXISTS idx_emoji_reactions_property_id ON emoji_reactions(property_id);
 CREATE INDEX IF NOT EXISTS idx_emoji_reactions_user_id ON emoji_reactions(user_id);
+
+-- ============================================================================
+-- Property Price History Table (v1.1.4)
+-- Bijhoudt de vraagprijshistorie per woning.
+-- Er wordt alleen een nieuwe rij ingevoegd als de prijs veranderd is
+-- t.o.v. de vorige bekende prijs (via de record_price_if_changed RPC).
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS property_price_history (
+  id            UUID  PRIMARY KEY DEFAULT uuid_generate_v4(),
+  property_id   TEXT  NOT NULL REFERENCES properties(property_id) ON DELETE CASCADE,
+  recorded_at   DATE  NOT NULL DEFAULT CURRENT_DATE,
+  price         INTEGER,
+  price_per_m2  INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_history_property_id
+  ON property_price_history(property_id);
+
+CREATE INDEX IF NOT EXISTS idx_price_history_recorded_at
+  ON property_price_history(property_id, recorded_at DESC);
+
+ALTER TABLE property_price_history
+  ADD CONSTRAINT uq_price_history_property_date UNIQUE (property_id, recorded_at);
 
 -- ============================================================================
 -- Votes Table
@@ -102,21 +152,38 @@ ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE emoji_reactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users zijn leesbaar voor iedereen"  ON users;
+DROP POLICY IF EXISTS "Users kunnen worden aangemaakt"     ON users;
+DROP POLICY IF EXISTS "Users kunnen worden bijgewerkt"     ON users;
 CREATE POLICY "Users zijn leesbaar voor iedereen"  ON users FOR SELECT USING (true);
 CREATE POLICY "Users kunnen worden aangemaakt"     ON users FOR INSERT WITH CHECK (true);
 CREATE POLICY "Users kunnen worden bijgewerkt"     ON users FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "Properties are viewable by everyone"    ON properties;
+DROP POLICY IF EXISTS "Properties can be inserted by everyone" ON properties;
+DROP POLICY IF EXISTS "Properties can be updated by everyone"  ON properties;
 CREATE POLICY "Properties are viewable by everyone"    ON properties FOR SELECT USING (true);
 CREATE POLICY "Properties can be inserted by everyone" ON properties FOR INSERT WITH CHECK (true);
 CREATE POLICY "Properties can be updated by everyone"  ON properties FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "Comments are viewable by everyone"      ON comments;
+DROP POLICY IF EXISTS "Comments can be inserted by everyone"   ON comments;
+DROP POLICY IF EXISTS "Comments can be deleted by owner"       ON comments;
 CREATE POLICY "Comments are viewable by everyone"      ON comments FOR SELECT USING (true);
 CREATE POLICY "Comments can be inserted by everyone"   ON comments FOR INSERT WITH CHECK (true);
+CREATE POLICY "Comments can be deleted by owner"       ON comments FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Emoji reactions are viewable by everyone"    ON emoji_reactions;
+DROP POLICY IF EXISTS "Emoji reactions can be inserted by everyone" ON emoji_reactions;
+DROP POLICY IF EXISTS "Emoji reactions can be deleted by everyone"  ON emoji_reactions;
 CREATE POLICY "Emoji reactions are viewable by everyone"    ON emoji_reactions FOR SELECT USING (true);
 CREATE POLICY "Emoji reactions can be inserted by everyone" ON emoji_reactions FOR INSERT WITH CHECK (true);
 CREATE POLICY "Emoji reactions can be deleted by everyone"  ON emoji_reactions FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Votes are viewable by everyone"    ON votes;
+DROP POLICY IF EXISTS "Votes can be inserted by everyone" ON votes;
+DROP POLICY IF EXISTS "Votes can be updated by everyone"  ON votes;
+DROP POLICY IF EXISTS "Votes can be deleted by everyone"  ON votes;
 CREATE POLICY "Votes are viewable by everyone"    ON votes FOR SELECT USING (true);
 CREATE POLICY "Votes can be inserted by everyone" ON votes FOR INSERT WITH CHECK (true);
 CREATE POLICY "Votes can be updated by everyone"  ON votes FOR UPDATE USING (true);
@@ -151,7 +218,8 @@ $do$;
 -- Views
 -- ============================================================================
 
-CREATE OR REPLACE VIEW comments_with_votes AS
+DROP VIEW IF EXISTS comments_with_votes;
+CREATE VIEW comments_with_votes AS
 SELECT
   c.*,
   COALESCE(COUNT(v.id) FILTER (WHERE v.vote_type = 'up'), 0)   AS upvotes,
@@ -190,9 +258,68 @@ CREATE TABLE IF NOT EXISTS email_notifications (
 
 CREATE INDEX IF NOT EXISTS idx_notifications_sent ON email_notifications(sent);
 
+ALTER TABLE property_price_history ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Price history leesbaar voor iedereen"              ON property_price_history;
+DROP POLICY IF EXISTS "Price history kan worden ingevoegd door iedereen"  ON property_price_history;
+CREATE POLICY "Price history leesbaar voor iedereen"
+  ON property_price_history FOR SELECT USING (true);
+
+CREATE POLICY "Price history kan worden ingevoegd door iedereen"
+  ON property_price_history FOR INSERT WITH CHECK (true);
+
 ALTER TABLE email_notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Email notifications niet leesbaar voor clients" ON email_notifications;
 CREATE POLICY "Email notifications niet leesbaar voor clients"
   ON email_notifications FOR SELECT USING (false);
+
+-- ============================================================================
+-- record_price_if_changed (v1.1.4)
+--
+-- Controleert server-side of de meegegeven vraagprijs afwijkt van de
+-- laatste bekende prijs voor deze woning. Zo ja, voegt een nieuwe rij in.
+-- Server-side om race conditions te voorkomen (twee tabs tegelijk).
+--
+-- Geeft terug: { inserted: bool, previous_price_num: int|null }
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION record_price_if_changed(
+  p_property_id  TEXT,
+  p_price        INTEGER,
+  p_price_per_m2 INTEGER
+)
+RETURNS JSONB AS $func$
+DECLARE
+  v_prev_price  INTEGER;
+  v_inserted    BOOLEAN;
+BEGIN
+  -- Haal de meest recente prijs op van een VORIGE dag (niet vandaag)
+  SELECT price
+    INTO v_prev_price
+    FROM property_price_history
+   WHERE property_id = p_property_id
+     AND recorded_at < CURRENT_DATE
+   ORDER BY recorded_at DESC
+   LIMIT 1;
+
+  -- Upsert voor vandaag: maak aan of overschrijf als de prijs veranderd is.
+  -- ON CONFLICT op (property_id, recorded_at) zodat er per dag max 1 rij bestaat.
+  INSERT INTO property_price_history (property_id, recorded_at, price, price_per_m2)
+    VALUES (p_property_id, CURRENT_DATE, p_price, p_price_per_m2)
+  ON CONFLICT (property_id, recorded_at) DO UPDATE
+    SET price        = EXCLUDED.price,
+        price_per_m2 = EXCLUDED.price_per_m2
+  WHERE property_price_history.price IS DISTINCT FROM EXCLUDED.price;
+
+  v_inserted := FOUND;
+
+  RETURN jsonb_build_object(
+    'inserted',       v_inserted,
+    'previous_price', v_prev_price
+  );
+END;
+$func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
 -- notify_on_reaction (v0.8.6)
@@ -402,5 +529,5 @@ SELECT table_name
 FROM information_schema.tables
 WHERE table_schema = 'public'
   AND table_type = 'BASE TABLE'
-  AND table_name IN ('users', 'properties', 'comments', 'emoji_reactions', 'votes', 'email_notifications')
+  AND table_name IN ('users', 'properties', 'comments', 'emoji_reactions', 'votes', 'email_notifications', 'property_price_history')
 ORDER BY table_name;

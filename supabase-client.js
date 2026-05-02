@@ -208,6 +208,61 @@ async function getUserId() {
 // API Functions
 // ==========================================================================
 
+// ==========================================================================
+// Prijshistorie
+// ==========================================================================
+
+/**
+ * Registreert de huidige vraagprijs als die verschilt van de laatste bekende.
+ * Roept de server-side RPC aan zodat er geen race-condition kan optreden.
+ *
+ * @param {string} propertyId
+ * @param {string|null} priceText    - Ruwe tekst, bijv. "€ 425.000"
+ * @param {number|null} priceNum     - Geparsed getal in euros
+ * @param {number|null} pricePerM2   - Prijs per m² (int)
+ * @returns {{ inserted: boolean, previousPriceNum: number|null }}
+ */
+async function recordPriceIfChanged(propertyId, price, pricePerM2) {
+  if (!propertyId || !price) return { inserted: false, previousPrice: null };
+  try {
+    const { data, error } = await supabaseClient.rpc('record_price_if_changed', {
+      p_property_id:  propertyId,
+      p_price:        price        ?? null,
+      p_price_per_m2: pricePerM2   ?? null,
+    });
+    if (error) { console.error('[Funda Reacties] recordPriceIfChanged fout:', error); return { inserted: false, previousPrice: null }; }
+    return { inserted: data.inserted, previousPrice: data.previous_price ?? null };
+  } catch (e) {
+    console.error('[Funda Reacties] recordPriceIfChanged exception:', e);
+    return { inserted: false, previousPrice: null };
+  }
+}
+
+/**
+ * Haalt de volledige vraagprijshistorie op, gesorteerd van nieuw naar oud.
+ * Wordt gebruikt voor:
+ *   - de prijswijziging-banner (nieuwste vs op-één-na-nieuwste)
+ *   - renderPriceChange per comment (zoek entry dichtst bij comment.created_at)
+ *
+ * @param {string} propertyId
+ * @returns {Array<{ price_text, price_num, price_per_m2, recorded_at }>}
+ */
+async function getLastKnownPrice(propertyId) {
+  if (!propertyId) return [];
+  try {
+    const { data, error } = await supabaseClient
+      .from('property_price_history')
+      .select('price, price_per_m2, recorded_at')
+      .eq('property_id', propertyId)
+      .order('recorded_at', { ascending: false });
+    if (error) { console.error('[Funda Reacties] getLastKnownPrice fout:', error); return []; }
+    return data || [];
+  } catch (e) {
+    console.error('[Funda Reacties] getLastKnownPrice exception:', e);
+    return [];
+  }
+}
+
 async function getReactions(propertyId) {
   try {
     const { data: property, error: propError } = await supabaseClient
@@ -277,10 +332,10 @@ async function getEmojiCounts(propertyId, userId) {
   } catch (error) { console.error('Error in getEmojiCounts:', error); return {}; }
 }
 
-async function postComment(propertyId, text, name, askingPrice, userId) {
+async function postComment(propertyId, text, name, userId) {
   try {
     const { data, error } = await supabaseClient
-      .from('comments').insert({ property_id: propertyId, user_id: userId, name, text, asking_price: askingPrice, is_ai: false }).select().single();
+      .from('comments').insert({ property_id: propertyId, user_id: userId, name, text }).select().single();
     if (error) { console.error('Error posting comment:', error); return null; }
     return data;
   } catch (error) { console.error('Error in postComment:', error); return null; }
