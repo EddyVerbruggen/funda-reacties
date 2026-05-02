@@ -214,7 +214,7 @@ Bij elke wijziging:
 
 ```bash
 cd /Users/eddy/sandboxes
-zip -r funda-reacties-1.0.1.zip funda-reacties/ \
+zip -r funda-reacties-1.2.1.zip funda-reacties/ \
   --exclude "funda-reacties/.git/*" \
   --exclude "funda-reacties/.idea/*" \
   --exclude "funda-reacties/docs/*" \
@@ -224,6 +224,26 @@ zip -r funda-reacties-1.0.1.zip funda-reacties/ \
   --exclude "funda-reacties/README.md" \
   --exclude "funda-reacties/download-supabase.sh"
 ```
+
+### Beschrijving voor de Chrome Web Store (pas aan bij nieuwe features)
+Funda Reacties voegt een reactiepaneel toe aan elke woningpagina op Funda.nl, zodat huizenzoekers ervaringen kunnen delen over bezichtigingen, de buurt, de makelaar of de vraagprijs.
+
+Wat kun je doen?
+
+- Zie direct of de vraagprijs veranderd is sinds jouw laatste bezoek.
+- Reageer met tekst op een woning — deel je bezichtigingservaring of geef anderen een heads-up over bijvoorbeeld een lekkende kraan.
+- Gebruik emoji-reacties (🔥 😍 🏚️ 💰 😬 📍) voor een snelle indruk.
+  Stem op reacties van anderen zodat de meest nuttige bovenaan komen.
+- Lees reacties van woningen in dezelfde straat of buurt als er nog niemand op déze woning heeft gereageerd.
+- Ontvang een melding zodra iemand reageert op een woning waarop jij ook hebt gereageerd.
+- Vergelijk de prijs per m² met andere woningen in dezelfde straat, wijk of stad — zodat je in één oogopslag ziet of een woning scherp of juist duur geprijsd is.
+- Lees AI-observaties over de woning, zoals opvallende prijzen, energielabels, bouwjaar of hoe lang de woning al te koop staat.
+
+Geen account nodig — de extensie werkt anoniem. Ben je ingelogd op Funda.nl? Dan wordt je Funda-account automatisch herkend voor een vaste gebruikersnaam.
+
+Reacties worden gedeeld tussen alle gebruikers van de extensie. Hoe meer mensen het gebruiken, hoe waardevoller het wordt.
+
+Open source · Geen advertenties · GDPR-compliant
 
 ---
 
