@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacybeleid — Funda Reacties</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f7f5f2;
+      color: #2c2416;
+      padding: 40px 20px 80px;
+      line-height: 1.7;
+    }
+    .container { max-width: 720px; margin: 0 auto; }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 40px;
+      padding-bottom: 24px;
+      border-bottom: 2px solid #e2ddd5;
+    }
+    .logo { font-size: 36px; }
+    .header-text h1 { font-size: 22px; font-weight: 700; }
+    .header-text p { font-size: 13px; color: #8a7e6e; margin-top: 2px; }
+    h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #e86c2a;
+      margin: 32px 0 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    p { margin-bottom: 12px; font-size: 15px; }
+    ul { margin: 8px 0 12px 20px; font-size: 15px; }
+    ul li { margin-bottom: 6px; }
+    code { background: #eee; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+    .highlight {
+      background: #fff;
+      border: 1px solid #e2ddd5;
+      border-left: 4px solid #e86c2a;
+      border-radius: 6px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    .not-stored {
+      background: #e6f4ec;
+      border: 1px solid #b8dfc8;
+      border-radius: 6px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    a { color: #e86c2a; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid #e2ddd5;
+      font-size: 12px;
+      color: #8a7e6e;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">🏠💬</div>
+      <div class="header-text">
+        <h1>Funda Reacties — Privacybeleid</h1>
+        <p>Laatst bijgewerkt: mei 2025</p>
+      </div>
+    </header>
+
+    <div class="highlight">
+      <strong>Samenvatting:</strong> Funda Reacties is een open source Chrome-extensie waarmee je anoniem reacties kunt plaatsen op woningpagina's van Funda.nl. We verzamelen zo min mogelijk data en verkopen nooit iets aan derden.
+    </div>
+
+    <h2>Welke data we opslaan</h2>
+
+    <p><strong>Lokaal op jouw apparaat</strong> (via <code>chrome.storage.local</code>):</p>
+    <ul>
+      <li>Een willekeurig gegenereerde gebruikers-ID — automatisch aangemaakt, geen naam of account vereist</li>
+      <li>Je weergavenaam (standaard automatisch gegenereerd, optioneel aanpasbaar)</li>
+      <li>Je Funda e-mailadres, <strong>alleen als je bent ingelogd op funda.nl</strong> — wordt gebruikt als stabiele gebruikers-ID</li>
+    </ul>
+
+    <p><strong>In onze gedeelde database</strong> (Supabase):</p>
+    <ul>
+      <li>Je gebruikers-ID (anoniem of gekoppeld aan Funda-e-mail)</li>
+      <li>Je weergavenaam</li>
+      <li>De tekstreacties en emoji-reacties die je plaatst</li>
+      <li>De URL en het adres van de woning waarop je reageert</li>
+      <li>Tijdstempel van je reactie</li>
+    </ul>
+
+    <div class="not-stored">
+      <strong>Wat we NIET opslaan:</strong> wachtwoorden, betalingsinformatie, browsergeschiedenis, of andere persoonsgegevens dan hierboven vermeld.
+    </div>
+
+    <h2>Hoe we data gebruiken</h2>
+    <p>De data wordt uitsluitend gebruikt om:</p>
+    <ul>
+      <li>Reacties te tonen aan andere gebruikers op dezelfde woningpagina</li>
+      <li>Je een melding te sturen als iemand reageert op een woning waarop jij ook reageerde</li>
+      <li>Anonieme reacties te koppelen aan je Funda-account als je later inlogt</li>
+    </ul>
+    <p>We gebruiken de data <strong>niet</strong> voor advertenties, profilering of commerciële doeleinden.</p>
+
+    <h2>Derden</h2>
+    <p>We maken gebruik van <a href="https://supabase.com" target="_blank">Supabase</a> als database. Supabase is GDPR-compliant en host data in de EU (Frankfurt). Zie hun <a href="https://supabase.com/privacy" target="_blank">privacybeleid</a> voor details.</p>
+    <p>Er worden verder geen data gedeeld met derden.</p>
+
+    <h2>Jouw rechten (AVG/GDPR)</h2>
+    <ul>
+      <li><strong>Inzage</strong> — open een issue op GitHub</li>
+      <li><strong>Verwijdering</strong> — je reacties zijn gekoppeld aan je gebruikers-ID; open een issue op GitHub met je gebruikers-ID (te vinden in de extensie-popup)</li>
+      <li><strong>Bezwaar</strong> — je kunt de extensie op elk moment verwijderen; lokale data wordt dan gewist</li>
+    </ul>
+
+    <h2>Contact</h2>
+    <p>
+      Vragen of verzoeken? Open een issue op GitHub:<br>
+      <a href="https://github.com/EddyVerbruggen/funda-reacties/issues" target="_blank">github.com/EddyVerbruggen/funda-reacties/issues</a>
+    </p>
+
+    <h2>Wijzigingen</h2>
+    <p>Wezenlijke wijzigingen in dit beleid worden vermeld in de changelog van de extensie. De datum bovenaan deze pagina wordt bijgehouden.</p>
+
+    <footer>
+      Funda Reacties &nbsp;·&nbsp; door de community, voor de community &nbsp;·&nbsp;
+      <a href="https://github.com/EddyVerbruggen/funda-reacties" target="_blank">GitHub</a>
+    </footer>
+  </div>
+</body>
+</html>
