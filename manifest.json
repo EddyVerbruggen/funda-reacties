@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Funda Reacties",
   "version": "1.0.0",
-  "description": "Reageer op woningen op Funda.nl — lees en deel ervaringen met andere huizenzoekers.",
+  "description": "Reageer op woningen op Funda.nl — deel ervaringen over bezichtigingen, buurten en vraagprijzen met andere huizenzoekers.",
   "incognito": "split",
   "icons": {
     "16": "icons/icon16.png",

@@ -132,6 +132,7 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 - [ ] Integratie met WOZ-data en CBS-statistieken
 - [ ] Export/import van reacties
 - [ ] Dark mode
+- [ ] Ontvang een melding zodra iemand reageert op een woning die jij ook hebt _bekeken_
 - [ ] Popup: teller voor geplaatste reacties en bekeken woningen
 - [ ] Popup: knop om een testnotificatie te versturen
 
