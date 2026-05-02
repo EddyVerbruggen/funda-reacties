@@ -206,9 +206,24 @@ Als je het schema wijzigt:
 ### Versie verhogen
 
 Bij elke wijziging:
-1. Update `manifest.json` > `version` (gebruik semantic versioning)
+1. Update `manifest.json` > `version` (gebruik semantic versioning) en hou in sync met de versie in popup.html.
 2. Test de extensie lokaal
 3. Commit en push
+
+### ZIP maken voor de Chrome Web Store
+
+```bash
+cd /Users/eddy/sandboxes
+zip -r funda-reacties-1.0.1.zip funda-reacties/ \
+  --exclude "funda-reacties/.git/*" \
+  --exclude "funda-reacties/.idea/*" \
+  --exclude "funda-reacties/docs/*" \
+  --exclude "funda-reacties/db/*" \
+  --exclude "funda-reacties/supabase/*" \
+  --exclude "funda-reacties/.env.example" \
+  --exclude "funda-reacties/README.md" \
+  --exclude "funda-reacties/download-supabase.sh"
+```
 
 ---
 
