@@ -227,6 +227,8 @@
       return null;
     }
 
+    // parseDutchDate is defined later — forward-reference is fine inside a function body
+
     const sinceStr = findDd("aangeboden sinds", "datum van aanmelding");
     if (sinceStr) {
       const parsed = parseDutchDate(sinceStr);
@@ -254,6 +256,55 @@
     if (rooms) insights.push({ icon: "🛏️", text: rooms });
 
     return insights;
+  }
+
+  // ---- Whisper helpers ----
+
+  /**
+   * Verzamelt de woningdata die de whisper-generator nodig heeft.
+   * Hergebruikt de dt/dd-logica uit generateInsights().
+   */
+  function getPropertyDataForWhisper() {
+    const dts = document.querySelectorAll("dt");
+    function findDd(...prefixes) {
+      for (const dt of dts) {
+        const label = (dt.textContent || "").trim().toLowerCase();
+        if (prefixes.some((p) => label.startsWith(p))) {
+          const dd = dt.nextElementSibling;
+          if (dd && dd.tagName === "DD") return (dd.textContent || "").trim();
+        }
+      }
+      return null;
+    }
+
+    const askingPriceStr = getAskingPrice();
+    const priceNum       = parsePrice(askingPriceStr);
+
+    const areaStr    = findDd("wonen", "woonoppervlakte", "gebruiksoppervlakte wonen");
+    let livingArea   = null;
+    if (areaStr) { const m = areaStr.match(/([\d.,]+)\s*m/i); if (m) livingArea = parseInt(m[1].replace(/\./g, ""), 10); }
+
+    const pricePerM2   = livingArea > 0 && priceNum > 0 ? Math.round(priceNum / livingArea) : null;
+    const energyLabel  = findDd("energielabel") || null;
+    const buildYear    = findDd("bouwjaar") || null;
+
+    // Monument: kijk of "Specifiek" de waarde "Monumentaal pand" bevat
+    const specifiekRaw = findDd("specifiek") || "";
+    const isMonument   = specifiekRaw.toLowerCase().includes("monument");
+
+    // Perceelgrootte
+    const perceelRaw = findDd("perceel") || "";
+    const perceelMatch = perceelRaw.match(/([\d.,]+)/);
+    const plotArea = perceelMatch ? parseInt(perceelMatch[1].replace(/\./g, "").replace(",", "."), 10) : null;
+
+    const sinceStr = findDd("aangeboden sinds", "datum van aanmelding");
+    let daysOnline = null;
+    if (sinceStr) {
+      const parsed = parseDutchDate(sinceStr);
+      if (parsed) daysOnline = Math.floor((Date.now() - parsed.getTime()) / 86400000);
+    }
+
+    return { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: getCityFromPage(), isMonument, plotArea };
   }
 
   function parseDutchDate(str) {
@@ -300,7 +351,7 @@
       const upvotes = (c.votes || []).filter(v => v.vote_type === 'up').length;
       const downvotes = (c.votes || []).filter(v => v.vote_type === 'down').length;
       const myVote = (c.votes || []).find(v => v.user_id === userId);
-      return { id: c.id, name: c.name, text: c.text, time: c.created_at, askingPrice: c.asking_price, upvotes, downvotes, myVote: myVote ? myVote.vote_type : null, isOwn: c.user_id === userId };
+      return { id: c.id, name: c.name, text: c.text, time: c.created_at, askingPrice: c.asking_price, isAi: c.is_ai || false, upvotes, downvotes, myVote: myVote ? myVote.vote_type : null, isOwn: c.user_id === userId };
     });
 
     return { address: getPropertyAddress(), url: getPropertyUrl(), location: getPropertyLocation(), emojis, comments };
@@ -415,7 +466,9 @@
           </ul>
         </div>
 
-        ${renderNeighborhoodGroups(neighborhoodGroups, data.comments.length > 0)}
+        ${renderNeighborhoodGroups(neighborhoodGroups, data.comments.filter(c => !c.isAi).length > 0)}
+
+        ${renderWhispers(getPropertyDataForWhisper())}
 
         <div class="fr-footer">Funda Reacties - voor en door de community</div>
       </div>
@@ -484,12 +537,33 @@
     return ownHtml + loadMoreBtn;
   }
 
+  /**
+   * Rendert de lokale whisper-observaties altijd onderaan het paneel.
+   * Geen DB, geen state — puur gegenereerd op basis van paginadata.
+   */
+  function renderWhispers(propertyData) {
+    const texts = generateWhisperTexts(propertyData);
+    if (!texts.length) return "";
+
+    return `
+      <div class="fr-whispers">
+        <div class="fr-whispers__header">✨ Automatische observaties</div>
+        <ul class="fr-whispers__list">
+          ${texts.map(t => `
+            <li class="fr-whisper-item">
+              <div class="fr-comment__avatar" style="background:#8a7e6e22;color:#8a7e6e">✦</div>
+              <p class="fr-whisper-item__text">${escapeHtml(t)}</p>
+            </li>`).join("")}
+        </ul>
+      </div>`;
+  }
+
   function renderNeighborhoodGroups(groups, ownCommentsExist) {
     if (!groups || groups.length === 0) return "";
     const totalCount = groups.reduce((n, g) => n + g.comments.length, 0);
     const intro = ownCommentsExist
       ? (totalCount === 1 ? "Ook een reactie" : `Ook ${totalCount} reacties`) + " op andere woningen in de omgeving:"
-      : "Nog geen reacties op deze woning. " + (totalCount === 1 ? "Dit is een reactie" : `Dit zijn ${totalCount} reacties`) + " op andere woningen in de omgeving.";
+      : (totalCount === 1 ? "Dit is een reactie" : `Dit zijn ${totalCount} reacties`) + " op andere woningen in de omgeving.";
 
     return `
       <ul class="fr-comments" style="border-top: 1px solid var(--fr-border);">

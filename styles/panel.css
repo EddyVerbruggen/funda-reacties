@@ -115,6 +115,28 @@
 .fr-emoji-btn--add:hover { color: var(--fr-accent); border-color: var(--fr-accent); }
 .fr-emoji-btn--add__plus { font-size: 14px; font-weight: 700; line-height: 1; }
 
+/* Tooltip via title-attribuut — werkt in alle browsers zonder JS */
+.fr-emoji-btn[title] { position: relative; }
+.fr-emoji-btn[title]:not(.fr-emoji-btn--add)::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--fr-text);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 10;
+}
+.fr-emoji-btn[title]:not(.fr-emoji-btn--add):hover::after { opacity: 1; }
+
 /* ---- Emoji Picker ---- */
 .fr-emoji-picker {
   position: absolute;
@@ -451,6 +473,51 @@
 .fr-price-change--down { background: #e6f4ec; color: #2d6b45; }
 .fr-price-change__old { font-weight: 500; opacity: 0.9; }
 .fr-price-change__pct { font-weight: 700; margin-top: 2px; }
+
+/* ---- Whisper Observaties ---- */
+.fr-whispers {
+  border-top: 1px solid var(--fr-border);
+  padding: 12px 16px 14px;
+  background: var(--fr-bg-alt);
+}
+
+.fr-whispers__header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--fr-text-muted);
+  margin-bottom: 10px;
+}
+
+.fr-whispers__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fr-whisper-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.fr-whisper-item .fr-comment__avatar {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.fr-whisper-item__text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fr-text-muted);
+  margin: 0;
+  padding-top: 3px;
+  font-style: italic;
+}
 
 /* ---- Empty State ---- */
 .fr-comments-empty { padding: 32px 20px; text-align: center; color: var(--fr-text-muted); }

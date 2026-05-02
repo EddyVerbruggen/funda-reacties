@@ -280,7 +280,7 @@ async function getEmojiCounts(propertyId, userId) {
 async function postComment(propertyId, text, name, askingPrice, userId) {
   try {
     const { data, error } = await supabaseClient
-      .from('comments').insert({ property_id: propertyId, user_id: userId, name, text, asking_price: askingPrice }).select().single();
+      .from('comments').insert({ property_id: propertyId, user_id: userId, name, text, asking_price: askingPrice, is_ai: false }).select().single();
     if (error) { console.error('Error posting comment:', error); return null; }
     return data;
   } catch (error) { console.error('Error in postComment:', error); return null; }
@@ -454,4 +454,89 @@ async function migrateAnonymousData(anonId, fundaId, displayName) {
   } catch (e) {
     console.error('[Funda Reacties] Migratie exception:', e);
   }
+}
+
+// ==========================================================================
+// Whisper Comments — lokaal gegenereerde observaties (geen DB)
+// ==========================================================================
+
+/**
+ * Genereert plausibele observaties puur op basis van woningdata van de pagina.
+ * Wordt volledig lokaal uitgevoerd — er gaat niets naar de database.
+ *
+ * @param {object} propertyData  - { priceNum, livingArea, pricePerM2, energyLabel,
+ *                                   buildYear, daysOnline, city, isMonument, plotArea }
+ * @returns {string[]}           - array van observatieteksten
+ */
+function titleCaseCity(str) {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function generateWhisperTexts(propertyData) {
+  const { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: rawCity, isMonument, plotArea } = propertyData;
+  const city = titleCaseCity(rawCity);
+  const texts = [];
+
+  // ---- Monument — altijd tonen als aanwezig ----
+  if (isMonument) {
+    texts.push('Dit is een monumentaal pand. Verbouwingen zijn aan strenge regels gebonden — controleer of alle benodigde vergunningen aanwezig en geldig zijn voordat je een bod uitbrengt.');
+  }
+
+  // ---- Groot perceel ----
+  if (plotArea > 500) {
+    texts.push(`Het perceel is ${plotArea} m² — fijn als je van tuinieren houdt, maar houd rekening met de tijd en kosten die een grote tuin met zich meebrengt.`);
+  }
+
+  // ---- Prijscommentaar ----
+  if (texts.length < 2 && pricePerM2 && priceNum) {
+    if (pricePerM2 > 6000) {
+      texts.push(`Forse vraagprijs voor ${city || 'deze buurt'} — meer dan €${Math.round(pricePerM2 / 100) * 100}/m² is hier aan de hoge kant. Benieuwd of er ruimte zit.`);
+    } else if (pricePerM2 < 3000) {
+      texts.push(`Opvallend scherp geprijsd voor ${city || 'hier'} — €${Math.round(pricePerM2 / 100) * 100}/m² is aantrekkelijk. Let wel op de staat van onderhoud.`);
+    } else {
+      texts.push(`Vraagprijs lijkt marktconform voor ${city || 'deze buurt'}. Altijd de moeite waard om te bezichtigen en te vergelijken.`);
+    }
+  } else if (texts.length < 2 && priceNum) {
+    if (priceNum > 750000) {
+      texts.push('Stevige vraagprijs. Bij dit budget zijn afwerking en locatie cruciaal — een bouwkundige keuring is zeker aan te raden.');
+    } else if (priceNum < 300000) {
+      texts.push('Interessant startersprijsje. Goed controleren of de VvE gezond is als het een appartement betreft.');
+    }
+  }
+
+  // ---- Energielabel-commentaar ----
+  if (texts.length < 2 && energyLabel) {
+    const label = energyLabel.trim().toUpperCase();
+    if (['A', 'A+', 'A++', 'A+++', 'A++++'].includes(label)) {
+      texts.push(`Energielabel ${label} — dat scheelt flink op de maandlasten. Prettig als de hypotheeknormen toch al krap zijn.`);
+    } else if (['F', 'G'].includes(label)) {
+      texts.push(`Energielabel ${label}: verwacht hogere stookkosten. Isolatie aanpakken kan de woning flink in waarde laten stijgen, maar reken op een investering.`);
+    } else if (['D', 'E'].includes(label)) {
+      texts.push(`Label ${label} is niet geweldig. Navragen welke isolatiemaatregelen al gedaan zijn en wat er nog op de planning staat.`);
+    }
+  }
+
+  // ---- Bouwjaar-commentaar ----
+  if (texts.length < 2 && buildYear) {
+    const year = parseInt(buildYear, 10);
+    if (year < 1960) {
+      texts.push(`Bouwjaar ${year} — charme genoeg, maar let op fundering, loodleidingen en elektrische installatie. Een bouwkundige keuring betaalt zichzelf terug.`);
+    } else if (year >= 1960 && year < 1985) {
+      texts.push(`Jaren '${String(year).slice(2, 4)}-bouw: vaak solide, maar isolatie en kozijnen kunnen verouderd zijn. Controleer of er al dubbel glas in zit.`);
+    } else if (year >= 2010) {
+      texts.push(`Relatief nieuw (${year}), dus de grote onderhoudsbeurt staat nog niet voor de deur. Wel goed de VvE-reservering checken als het een appartement is.`);
+    }
+  }
+
+  // ---- Tijd online ----
+  if (texts.length < 2 && daysOnline !== null && daysOnline !== undefined) {
+    if (daysOnline > 60) {
+      texts.push(`Al ${daysOnline} dagen online — vraag gerust waarom het nog niet verkocht is. Soms zit er een verhaal achter, soms is er gewoon onderhandelingsruimte.`);
+    } else if (daysOnline <= 3) {
+      texts.push('Vers aanbod! Als het interessant is, snel reageren — goede woningen in dit segment gaan tegenwoordig razendsnel.');
+    }
+  }
+
+  return texts;
 }
