@@ -111,74 +111,71 @@ async function detectFundaAccountFromFetch() {
  *   wordt, slaan we het anonieme ID op als 'previousUserId' zodat
  *   we later comments kunnen migreren.
  */
+// In-memory lock: voorkomt dat parallelle aanroepen elk een nieuw userId aanmaken
+let _profilePromise = null;
+let _profileCache   = null;
+
+function resetProfileCache() {
+  _profileCache   = null;
+  _profilePromise = null;
+  try { sessionStorage.removeItem('funda_reacties_profile'); } catch (e) { /* ignore */ }
+}
+
 async function getUserProfile() {
   const SESSION_KEY = 'funda_reacties_profile';
 
-  // 1. Snelle cache: sessionstorage (per tab, werkt ook in incognito)
+  // 1. In-memory cache (snelste, zelfde tab)
+  if (_profileCache?.userId) return _profileCache;
+
+  // 2. Lopende aanroep: wacht op dezelfde promise i.p.v. parallel te draaien
+  if (_profilePromise) return _profilePromise;
+
+  // 3. Sessionstorage (overleeft kleine re-renders, niet een verse installatie)
   try {
     const cached = sessionStorage.getItem(SESSION_KEY);
     if (cached) {
       const profile = JSON.parse(cached);
-      if (profile?.userId) return profile;
+      if (profile?.userId) { _profileCache = profile; return profile; }
     }
   } catch (e) { /* ignore */ }
 
-  return new Promise((resolve) => {
-    console.log(">> a");
+  _profilePromise = new Promise((resolve) => {
     chrome.storage.local.get(['userId', 'displayName', 'fundaEmail'], async (stored) => {
-      let userId       = stored.userId       || null;
-      let displayName  = stored.displayName  || null;
-      let fundaEmail   = stored.fundaEmail   || null;
-      let source       = 'anonymous';
+      let userId      = stored.userId      || null;
+      let displayName = stored.displayName || null;
+      let fundaEmail  = stored.fundaEmail  || null;
+      let source      = 'anonymous';
 
-      // --- Stap 1: Als nog geen Funda-email, probeer via fetch ---
-      if (!fundaEmail) {
-        const account = await detectFundaAccountFromFetch();
-
-        if (account?.email) {
-          if (userId && userId !== `funda:${account.email}`) {
-            chrome.storage.local.set({ previousUserId: userId });
-          }
-          fundaEmail = account.email;
-          userId = `funda:${fundaEmail}`;
-          source = 'funda-fetch';
-          chrome.storage.local.set({ fundaEmail });
-
-          // Gebruik Funda-voornaam als displayName (alleen als nog geen handmatige naam)
-          if (account.name && !stored.displayName) {
-            displayName = account.name;
-          }
-        }
+      // Als er al een fundaEmail in storage staat, gebruik die direct.
+      // De /account/ fetch wordt NOOIT hier gedaan — dat is de taak van
+      // watchLoginState in content.js, die weet of de gebruiker ingelogd is.
+      if (fundaEmail) {
+        userId = `funda:${fundaEmail}`;
+        source = 'funda-stored';
       }
 
-      // --- Stap 2: Fallback — anoniem ID ---
+      // Fallback — anoniem ID
       if (!userId) {
         userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         source = 'anonymous-new';
         console.log('[Funda Reacties] Nieuw anoniem userId:', userId);
       }
 
-      // --- Displaynaam bepalen ---
-      if (!displayName) {
-        // Probeer voornaam alsnog via fetch (als we het emailadres al kennen
-        // maar de naam nog niet hebben opgehaald)
-        if (fundaEmail && source.startsWith('funda-stored')) {
-          const account = await detectFundaAccountFromFetch();
-          if (account?.name) displayName = account.name;
-        }
-        if (!displayName) displayName = generateDefaultName();
-      }
+      if (!displayName) displayName = generateDefaultName();
 
       const profile = { userId, displayName, fundaEmail: fundaEmail || null, source };
 
-      // Opslaan
       chrome.storage.local.set({ userId, displayName, fundaEmail: fundaEmail || null });
       try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(profile)); } catch (e) { /* ignore */ }
+      _profileCache   = profile;
+      _profilePromise = null;
 
-      console.log('[Funda Reacties] Profiel:', profile);
+      console.log('[Funda Reacties] Profiel (lokaal):', profile);
       resolve(profile);
     });
   });
+
+  return _profilePromise;
 }
 
 /**
@@ -232,6 +229,19 @@ async function upsertProperty(propertyId, address, url, location) {
     if (error) { console.error('Error upserting property:', error); return null; }
     return data;
   } catch (error) { console.error('Error in upsertProperty:', error); return null; }
+}
+
+async function trackPropertyView(propertyId) {
+  try {
+    const profile = await getUserProfile();
+    const { error } = await supabaseClient.rpc('track_property_view', {
+      p_user_id:      profile.userId,
+      p_display_name: profile.displayName,
+      p_is_anonymous: !profile.fundaEmail,
+      p_property_id:  propertyId,
+    });
+    if (error) console.error('Error tracking property view:', error);
+  } catch (error) { console.error('Error in trackPropertyView:', error); }
 }
 
 async function toggleEmojiReaction(propertyId, emoji, userId) {
@@ -425,7 +435,7 @@ function unsubscribeFromPropertyUpdates(channel) {
 async function migrateAnonymousData(anonId, fundaId, displayName) {
   if (!anonId || !fundaId || anonId === fundaId) return;
 
-  dbg('[migrate] Start migratie:', anonId, '→', fundaId);
+  console.log('[Funda Reacties] Migratie start:', anonId, '→', fundaId);
 
   try {
     const { data, error } = await supabaseClient.rpc('migrate_anonymous_comments', {
@@ -439,9 +449,7 @@ async function migrateAnonymousData(anonId, fundaId, displayName) {
       return;
     }
 
-    dbg('[migrate] Resultaat:', data);
-
-    // Wis previousUserId zodat we niet nogmaals migreren
+    console.log('[Funda Reacties] Migratie resultaat:', data);
     chrome.storage.local.remove('previousUserId');
   } catch (e) {
     console.error('[Funda Reacties] Migratie exception:', e);

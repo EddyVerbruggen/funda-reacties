@@ -199,6 +199,17 @@
   const DEBUG = true;
   function dbg(...args) { if (DEBUG) console.log("[Funda Reacties]", ...args); }
 
+  // Verwijder HTML-tags en URLs stille zodat comments altijd plain text zijn.
+  // Gebruikers merken dit alleen als ze echt HTML of links probeerden in te voeren.
+  function sanitizeComment(text) {
+    return text
+      .replace(/<[^>]*>/g, '')                          // HTML-tags strippen
+      .replace(/https?:\/\/\S+/gi, '')                  // http(s):// URLs verwijderen
+      .replace(/www\.\S+/gi, '')                        // www.* URLs verwijderen
+      .replace(/[ \t]{2,}/g, ' ')                       // dubbele spaties samenvoegen
+      .trim();
+  }
+
   // ---- Scraping helpers ----
 
   function generateInsights() {
@@ -261,6 +272,8 @@
   async function loadReactions(propertyId) {
     const userId = currentUserId;
     await upsertProperty(propertyId, getPropertyAddress(), getPropertyUrl(), getPropertyLocation());
+    // trackPropertyView wordt NIET hier aangeroepen — dat gebeurt eenmalig
+    // vanuit inject() nadat het profiel definitief bekend is.
 
     const emojiCounts = await getEmojiCounts(propertyId, userId);
     const emojis = {};
@@ -633,7 +646,14 @@
         submitBtn.disabled = true;
         submitBtn.textContent = "Bezig…";
 
-        const newComment = await postComment(propertyId, text, currentDisplayName, getAskingPrice(), currentUserId);
+        const sanitizedText = sanitizeComment(text);
+        if (!sanitizedText) {
+          submitBtn.textContent = "Plaatsen";
+          submitBtn.disabled = false;
+          return;
+        }
+
+        const newComment = await postComment(propertyId, sanitizedText, currentDisplayName, getAskingPrice(), currentUserId);
 
         if (newComment) {
           const freshData = await loadReactions(propertyId);
@@ -871,7 +891,12 @@
       placeholder.replaceWith(panel);
       if (agentPanel) { panel.style.marginTop = "0"; panel.style.marginBottom = "16px"; }
       attachEvents(panel);
-      watchLoginState(panel);
+      // Wacht op login-detectie zodat currentUserId definitief is vóórdat
+      // trackPropertyView wordt aangeroepen. Anders kan een anonieme users-rij
+      // worden aangemaakt die net na de migratie-delete opnieuw verschijnt.
+      await watchLoginState(panel);
+      const propertyId = getPropertyId();
+      if (/^\d{6,}$/.test(propertyId)) trackPropertyView(propertyId); // alleen echte property IDs tracken
       const data = await loadReactions(getPropertyId());
       chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: data.comments.length });
       dbg("✅ Panel fully rendered");
@@ -891,43 +916,53 @@
   // We checken dit eenmalig en fetchen het account als ingelogd.
 
   function isLoggedInFromDOM() {
-    // Ingelogd: de header bevat een knop met aria-label="Open menu item"
-    // Niet ingelogd: er is een <button type="submit"> met een <span>Inloggen</span>
-    const accountBtn = document.querySelector('button[aria-label="Open menu item"]');
-    if (accountBtn) return true;
+    // Niet ingelogd: er staat een knop met de tekst 'Inloggen' in de header
     const spans = document.querySelectorAll('button[type="submit"] span');
     for (const span of spans) {
       if (span.textContent.trim() === 'Inloggen') return false;
     }
-    // Fallback: geen van beide gevonden, beschouw als niet ingelogd
+    // Ingelogd: de header bevat een account-knop
+    const accountBtn = document.querySelector('button[aria-label="Open menu item"]');
+    if (accountBtn) return true;
+    // Fallback: onduidelijk, ga uit van niet ingelogd (veiligste keuze)
     return false;
   }
 
-  async function applyProfileToPanel(root, profile) {
+  async function applyProfileToPanel(root, profile, explicitPreviousUserId) {
     if (!profile.fundaEmail) return;
 
-    currentUserId = profile.userId;
+    // Gebruik het expliciet meegegeven anonieme ID als dat er is,
+    // anders val terug op currentUserId (voor het geval we al wisten dat het anoniem was)
+    const previousUserId = explicitPreviousUserId || currentUserId;
+    currentUserId      = profile.userId;
     currentDisplayName = profile.displayName;
-    dbg('Profiel toegepast op paneel:', profile);
 
-    // Migreer anonieme comments naar Funda-account als er een previousUserId is
-    chrome.storage.local.get(['previousUserId'], async ({ previousUserId }) => {
-      if (previousUserId && previousUserId !== profile.userId) {
-        await migrateAnonymousData(previousUserId, profile.userId, profile.displayName);
-        // Herlaad comments zodat gemigreerde comments de juiste eigenaar tonen
-        const propertyId = getPropertyId();
-        const freshData = await loadReactions(propertyId);
-        const list = root.querySelector('#fr-comments-list');
-        if (list) {
-          allComments = freshData.comments;
-          commentsDisplayed = Math.min(10, freshData.comments.length);
-          list.innerHTML = renderComments(freshData.comments, false);
-          attachVoteEvents(root, propertyId);
-          attachDeleteEvents(root, propertyId);
-          attachLoadMoreHandler(root, propertyId);
-        }
+    console.log('[Funda Reacties] applyProfileToPanel:', { previousUserId, newUserId: profile.userId });
+
+    if (previousUserId && previousUserId !== profile.userId) {
+      console.log('[Funda Reacties] Migratie nodig: anoniem → Funda');
+      await migrateAnonymousData(previousUserId, profile.userId, profile.displayName);
+      // Herlaad comments zodat gemigreerde comments de juiste eigenaar tonen
+      const propertyId = getPropertyId();
+      const freshData = await loadReactions(propertyId);
+      const list = root.querySelector('#fr-comments-list');
+      if (list) {
+        allComments = freshData.comments;
+        commentsDisplayed = Math.min(10, freshData.comments.length);
+        list.innerHTML = renderComments(freshData.comments, false);
+        attachVoteEvents(root, propertyId);
+        attachDeleteEvents(root, propertyId);
+        attachLoadMoreHandler(root, propertyId);
       }
-    });
+    } else {
+      // Geen anonieme sessie om te migreren — controleer toch via storage
+      // voor het geval previousUserId al gewist was maar migratie nog niet gedaan
+      chrome.storage.local.get(['previousUserId'], async ({ previousUserId: storedPrev }) => {
+        if (storedPrev && storedPrev !== profile.userId) {
+          await migrateAnonymousData(storedPrev, profile.userId, profile.displayName);
+        }
+      });
+    }
 
     const nameInput = root.querySelector('#fr-name-input');
     if (nameInput) nameInput.value = currentDisplayName;
@@ -943,31 +978,49 @@
 
   async function checkLoginAndUpdatePanel(root) {
     const loggedIn = isLoggedInFromDOM();
-    dbg('Login check via DOM:', loggedIn);
 
-    if (!loggedIn) return;
+    // Stap 1: al eerder ingelogd en opgeslagen in storage?
+    const stored = await new Promise(resolve => chrome.storage.local.get(['fundaEmail'], resolve));
 
-    // Gebruiker is ingelogd: haal profiel op via /account/ fetch
-    // maar alleen als we nog geen fundaEmail hebben opgeslagen
-    chrome.storage.local.get(['fundaEmail'], async (stored) => {
-      if (stored.fundaEmail) {
-        dbg('fundaEmail al bekend:', stored.fundaEmail);
-        // Zorg dat het paneel ook de juiste naam toont
-        const profile = await getUserProfile();
-        await applyProfileToPanel(root, profile);
-        return;
-      }
+    if (stored.fundaEmail && !loggedIn) {
+      // Gebruiker was ingelogd maar is nu uitgelogd — storage opschonen
+      // zodat we niet meer proberen /account/ te fetchen.
+      dbg('Uitgelogd gedetecteerd, storage opschonen');
+      await new Promise(resolve => chrome.storage.local.remove(['fundaEmail', 'userId', 'displayName', 'previousUserId'], resolve));
+      resetProfileCache();
+      return;
+    }
 
-      // Nog geen email: wis cache en fetch opnieuw
-      try { sessionStorage.removeItem('funda_reacties_profile'); } catch (e) {}
+    if (stored.fundaEmail && loggedIn) {
+      dbg('fundaEmail al bekend:', stored.fundaEmail);
       const profile = await getUserProfile();
       await applyProfileToPanel(root, profile);
-    });
+      return;
+    }
+
+    // Stap 2: geen email in storage, alleen fetchen als DOM bevestigt dat ingelogd
+    if (!loggedIn) return;
+
+    const anonUserId = currentUserId;
+    const account = await detectFundaAccountFromFetch();
+    if (!account?.email) return;
+
+    const fundaUserId = `funda:${account.email}`;
+    const displayName = account.name || currentDisplayName;
+
+    await new Promise(resolve => chrome.storage.local.set({
+      fundaEmail: account.email,
+      userId:     fundaUserId,
+      displayName,
+    }, resolve));
+
+    resetProfileCache();
+    const profile = await getUserProfile();
+    await applyProfileToPanel(root, profile, anonUserId);
   }
 
-  function watchLoginState(root) {
-    // Eenmalige check op basis van SSR HTML
-    checkLoginAndUpdatePanel(root);
+  async function watchLoginState(root) {
+    await checkLoginAndUpdatePanel(root);
   }
 
   let retryCount = 0;

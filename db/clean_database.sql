@@ -1,0 +1,7 @@
+-- Volgorde belangrijk vanwege foreign keys
+TRUNCATE TABLE email_notifications RESTART IDENTITY CASCADE;
+TRUNCATE TABLE votes               RESTART IDENTITY CASCADE;
+TRUNCATE TABLE emoji_reactions     RESTART IDENTITY CASCADE;
+TRUNCATE TABLE comments            RESTART IDENTITY CASCADE;
+TRUNCATE TABLE properties          RESTART IDENTITY CASCADE;
+TRUNCATE TABLE users               RESTART IDENTITY CASCADE;

@@ -1,10 +1,29 @@
 -- ============================================================================
 -- Funda Reacties Database Schema
--- Supabase PostgreSQL — v0.8.6
+-- Supabase PostgreSQL — v0.9.0
 -- ============================================================================
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================================================
+-- Users Table (v0.9.0)
+-- Centrale gebruikerstabel. user_id = 'funda:email' of 'user_xxxx'.
+-- properties_viewed: JSONB array van unieke property_id strings.
+-- comment_count wordt NIET opgeslagen — realtime via COUNT op comments.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS users (
+  user_id           TEXT PRIMARY KEY,
+  display_name      TEXT NOT NULL,
+  is_anonymous      BOOLEAN NOT NULL DEFAULT true,
+  properties_viewed JSONB NOT NULL DEFAULT '[]'::jsonb,
+  first_seen_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_is_anonymous ON users(is_anonymous);
+CREATE INDEX IF NOT EXISTS idx_users_last_seen    ON users(last_seen_at DESC);
 
 -- ============================================================================
 -- Properties Table
@@ -77,10 +96,15 @@ CREATE INDEX IF NOT EXISTS idx_votes_user_id ON votes(user_id);
 -- Row Level Security (RLS) Policies
 -- ============================================================================
 
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE properties ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE emoji_reactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users zijn leesbaar voor iedereen"  ON users FOR SELECT USING (true);
+CREATE POLICY "Users kunnen worden aangemaakt"     ON users FOR INSERT WITH CHECK (true);
+CREATE POLICY "Users kunnen worden bijgewerkt"     ON users FOR UPDATE USING (true);
 
 CREATE POLICY "Properties are viewable by everyone"    ON properties FOR SELECT USING (true);
 CREATE POLICY "Properties can be inserted by everyone" ON properties FOR INSERT WITH CHECK (true);
@@ -231,6 +255,55 @@ CREATE TRIGGER trigger_notify_on_emoji
   FOR EACH ROW EXECUTE FUNCTION notify_on_reaction();
 
 -- ============================================================================
+-- track_property_view (v0.9.0)
+--
+-- Registreert dat een gebruiker een woning heeft bekeken.
+-- Doet een upsert van de users-rij en voegt property_id toe aan de
+-- properties_viewed JSONB array — maar alleen als die er nog niet in zit.
+--
+-- Parameters:
+--   p_user_id      : het user_id van de kijker
+--   p_display_name : weergavenaam (voor upsert bij nieuwe gebruikers)
+--   p_is_anonymous : true = anoniem, false = Funda-account
+--   p_property_id  : de bekeken woning
+--
+-- Geeft terug: { user_id, properties_viewed_count }
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION track_property_view(
+  p_user_id      TEXT,
+  p_display_name TEXT,
+  p_is_anonymous BOOLEAN,
+  p_property_id  TEXT
+)
+RETURNS JSONB AS $func$
+BEGIN
+  -- Upsert de user-rij. Bij conflict:
+  --   - altijd display_name en last_seen_at bijwerken
+  --   - property_id alleen toevoegen als die nog niet in de array zit
+  --     (atomaire check+write, geen aparte SELECT nodig)
+  INSERT INTO users (user_id, display_name, is_anonymous, properties_viewed, last_seen_at)
+    VALUES (p_user_id, p_display_name, p_is_anonymous, jsonb_build_array(p_property_id), NOW())
+  ON CONFLICT (user_id) DO UPDATE
+    SET display_name      = EXCLUDED.display_name,
+        is_anonymous      = EXCLUDED.is_anonymous,
+        last_seen_at      = NOW(),
+        properties_viewed = CASE
+          WHEN users.properties_viewed @> jsonb_build_array(p_property_id)
+          THEN users.properties_viewed                                          -- al aanwezig: niet toevoegen
+          ELSE users.properties_viewed || jsonb_build_array(p_property_id)      -- nieuw: toevoegen
+        END;
+
+  RETURN jsonb_build_object(
+    'user_id', p_user_id,
+    'properties_viewed_count', jsonb_array_length(
+      (SELECT properties_viewed FROM users WHERE user_id = p_user_id)
+    )
+  );
+END;
+$func$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
 -- migrate_anonymous_comments (v0.8.9)
 --
 -- Koppelt anonieme comments en emoji-reacties aan een Funda-account.
@@ -284,6 +357,39 @@ BEGIN
   DELETE FROM emoji_reactions
    WHERE user_id = p_anon_id;
 
+  -- Migreer ook de users-rij: kopieer properties_viewed van anoniem naar Funda-account
+  INSERT INTO users (user_id, display_name, is_anonymous, properties_viewed, first_seen_at, last_seen_at)
+    SELECT
+      p_funda_id,
+      CASE WHEN p_new_name != '' THEN p_new_name ELSE display_name END,
+      false,
+      properties_viewed,
+      first_seen_at,
+      NOW()
+    FROM users
+    WHERE user_id = p_anon_id
+  ON CONFLICT (user_id) DO UPDATE
+    SET display_name      = CASE WHEN p_new_name != '' THEN p_new_name ELSE users.display_name END,
+        is_anonymous      = false,
+        -- Voeg bekeken woningen samen (union, duplicaten verwijderd)
+        properties_viewed = (
+          SELECT jsonb_agg(DISTINCT pid)
+          FROM (
+            SELECT jsonb_array_elements_text(users.properties_viewed) AS pid
+            UNION
+            SELECT jsonb_array_elements_text(
+              COALESCE(
+                (SELECT properties_viewed FROM users WHERE user_id = p_anon_id),
+                '[]'::jsonb
+              )
+            ) AS pid
+          ) sub
+        ),
+        last_seen_at      = NOW();
+
+  -- Verwijder de anonieme gebruikersrij
+  DELETE FROM users WHERE user_id = p_anon_id;
+
   RETURN jsonb_build_object('comments', v_comments_updated, 'emojis', v_emojis_updated);
 END;
 $func$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -296,5 +402,5 @@ SELECT table_name
 FROM information_schema.tables
 WHERE table_schema = 'public'
   AND table_type = 'BASE TABLE'
-  AND table_name IN ('properties', 'comments', 'emoji_reactions', 'votes', 'email_notifications')
+  AND table_name IN ('users', 'properties', 'comments', 'emoji_reactions', 'votes', 'email_notifications')
 ORDER BY table_name;

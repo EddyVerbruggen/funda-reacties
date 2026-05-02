@@ -52,24 +52,51 @@
     }
   });
 
-  // ---- Check notification permission level ----
-  const diagNotif = document.getElementById("diag-notif");
-  chrome.runtime.sendMessage({ type: "CHECK_NOTIFICATIONS" }, (response) => {
-    if (chrome.runtime.lastError) { diagNotif.textContent = "fout"; diagNotif.className = "diag-badge diag-badge--warn"; return; }
-    if (response?.level === "granted") { diagNotif.textContent = "✓ Toegestaan"; diagNotif.className = "diag-badge diag-badge--ok"; }
-    else { diagNotif.textContent = `⚠ ${response?.level ?? "onbekend"}`; diagNotif.className = "diag-badge diag-badge--warn"; }
-  });
+  // ---- Supabase config ----
+  const SUPABASE_URL = 'https://xjniqvdfwnsvsuuteakt.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqbmlxdmRmd25zdnN1dXRlYWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NDgxNjIsImV4cCI6MjA5MzAyNDE2Mn0.Dr-t4SIBaZMYu2nn1553S1VzaSCm2bcnxCcAzue_xKo';
+  const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` };
 
-  // ---- Check Supabase reachability ----
-  const diagSupabase = document.getElementById("diag-supabase");
-  try {
-    await fetch('https://xjniqvdfwnsvsuuteakt.supabase.co/rest/v1/', {
-      headers: { 'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqbmlxdmRmd25zdnN1dXRlYWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NDgxNjIsImV4cCI6MjA5MzAyNDE2Mn0.Dr-t4SIBaZMYu2nn1553S1VzaSCm2bcnxCcAzue_xKo' }
-    });
-    diagSupabase.textContent = "✓ Verbonden";
-    diagSupabase.className = "diag-badge diag-badge--ok";
-  } catch (e) {
-    diagSupabase.textContent = "✗ Geen verbinding";
-    diagSupabase.className = "diag-badge diag-badge--warn";
-  }
+  // ---- Activiteitsstatistieken laden ----
+  const statHouses   = document.getElementById('stat-houses');
+  const statComments = document.getElementById('stat-comments');
+
+  chrome.storage.local.get(['userId'], async ({ userId }) => {
+    if (!userId) {
+      statHouses.textContent   = '—';
+      statComments.textContent = '—';
+      return;
+    }
+
+    try {
+      // Aantal bekeken huizen: lees properties_viewed uit users tabel
+      const userRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/users?user_id=eq.${encodeURIComponent(userId)}&select=properties_viewed`,
+        { headers }
+      );
+      const userData = await userRes.json();
+      const propertiesViewed = userData?.[0]?.properties_viewed ?? [];
+      const housesCount = Array.isArray(propertiesViewed) ? propertiesViewed.length : null;
+      statHouses.textContent = housesCount != null ? housesCount : '—';
+      const housesLabel = statHouses.closest('.stat-card')?.querySelector('.stat-card__label');
+      if (housesLabel) housesLabel.textContent = housesCount === 1 ? 'Huis bekeken' : 'Huizen bekeken';
+    } catch (e) {
+      statHouses.textContent = '?';
+    }
+
+    try {
+      // Aantal reacties: tel comments van deze user
+      const countRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/comments?user_id=eq.${encodeURIComponent(userId)}&select=id`,
+        { headers: { ...headers, 'Prefer': 'count=exact', 'Range-Unit': 'items', 'Range': '0-0' } }
+      );
+      const total = countRes.headers.get('content-range')?.split('/')?.[1];
+      const count = total != null ? parseInt(total, 10) : null;
+      statComments.textContent = count != null ? count : '?';
+      const commentLabel = statComments.closest('.stat-card')?.querySelector('.stat-card__label');
+      if (commentLabel) commentLabel.textContent = count === 1 ? 'Reactie geplaatst' : 'Reacties geplaatst';
+    } catch (e) {
+      statComments.textContent = '?';
+    }
+  });
 })();

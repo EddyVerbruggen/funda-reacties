@@ -21,6 +21,10 @@
     .diag-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
     .diag-badge--ok   { background: #e6f4ec; color: #2d6b45; }
     .diag-badge--warn { background: #fef3ec; color: #9b5623; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 2px; }
+    .stat-card { background: #fff; border: 1px solid #e2ddd5; border-radius: 10px; padding: 10px 30px; text-align: center; }
+    .stat-card__value { font-size: 22px; font-weight: 700; color: #e86c2a; line-height: 1.1; }
+    .stat-card__label { font-size: 10px; color: #8a7e6e; margin-top: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
     .popup__footer { text-align: center; padding-top: 12px; border-top: 1px solid #e2ddd5; font-size: 11px; color: #8a7e6e; }
   </style>
 </head>
@@ -30,7 +34,7 @@
       <span class="popup__logo">🏠💬</span>
       <div>
         <div class="popup__title">Funda Reacties</div>
-        <div class="popup__subtitle">v1.0.0 · community edition</div>
+        <div class="popup__subtitle">v1.0.1 · community edition</div>
       </div>
     </div>
 
@@ -44,10 +48,11 @@
     </div>
 
     <div class="popup__section">
-      <div class="popup__section-title">Systeem status</div>
-      <div class="diag-row"><span>Extensie actief</span><span class="diag-badge diag-badge--ok">✓ OK</span></div>
-      <div class="diag-row"><span>Notificaties</span><span class="diag-badge" id="diag-notif">…</span></div>
-      <div class="diag-row"><span>Database verbinding</span><span class="diag-badge" id="diag-supabase">…</span></div>
+      <div class="popup__section-title">Jouw activiteit</div>
+      <div class="stat-grid" id="activity-stats">
+        <div class="stat-card"><div class="stat-card__value" id="stat-houses">…</div><div class="stat-card__label">Huizen<br/>bekeken</div></div>
+        <div class="stat-card"><div class="stat-card__value" id="stat-comments">…</div><div class="stat-card__label">Reacties<br/>geplaatst</div></div>
+      </div>
     </div>
 
     <div class="popup__footer">Door de community, voor de community</div>
