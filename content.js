@@ -267,7 +267,17 @@
 
   // ---- Supabase Data Layer ----
 
-  const DEFAULT_EMOJIS = ["🔥", "😍", "🤔", "💸", "📉", "🏡"];
+  // Standaard emoji met tooltiplabels. De volgorde bepaalt de weergave in de balk.
+  const DEFAULT_EMOJIS = [
+    { emoji: "🔥", label: "Must-see!" },
+    { emoji: "😍", label: "Droomhuis" },
+    { emoji: "💰", label: "Goede prijs" },
+    { emoji: "😬", label: "Te duur" },
+    { emoji: "📍", label: "Toplocatie" },
+    { emoji: "🏚️", label: "Opknapper" },
+  ];
+  const DEFAULT_EMOJI_KEYS = DEFAULT_EMOJIS.map(e => e.emoji);
+  const EMOJI_LABELS = Object.fromEntries(DEFAULT_EMOJIS.map(e => [e.emoji, e.label]));
 
   async function loadReactions(propertyId) {
     const userId = currentUserId;
@@ -277,8 +287,8 @@
 
     const emojiCounts = await getEmojiCounts(propertyId, userId);
     const emojis = {};
-    for (const e of DEFAULT_EMOJIS) emojis[e] = emojiCounts[e] || { count: 0, active: false };
-    for (const [e, info] of Object.entries(emojiCounts)) { if (!emojis[e]) emojis[e] = info; }
+    for (const { emoji } of DEFAULT_EMOJIS) emojis[emoji] = emojiCounts[emoji] || { count: 0, active: false };
+    for (const [emoji, info] of Object.entries(emojiCounts)) { if (!emojis[emoji]) emojis[emoji] = info; }
 
     const { data: rawComments, error: commentsError } = await supabaseClient
       .from('comments').select('*, votes(*)')
@@ -311,7 +321,7 @@
 
   // ---- Emoji Picker Data ----
 
-  const DEFAULT_EMOJI_SET = new Set(DEFAULT_EMOJIS);
+  const DEFAULT_EMOJI_SET = new Set(DEFAULT_EMOJI_KEYS);
 
   const EMOJI_CATEGORIES = {
     "Woning": [["🏠","huis woning"],["🏡","huis tuin"],["🏘️","wijk buurt"],["🏗️","bouw nieuwbouw"],["🏢","appartement"],["🪴","plant tuin"],["🛋️","woonkamer"],["🛏️","slaapkamer"],["🚿","badkamer"],["🔑","sleutel kopen"],["🪟","raam"],["🚪","deur"],["🧱","baksteen"],["🏚️","opknapper"]],
@@ -357,7 +367,7 @@
 
         <div class="fr-quick-reactions" id="fr-emoji-bar">
           ${Object.entries(data.emojis).map(([emoji, info]) => `
-            <button class="fr-emoji-btn ${info.active ? "active" : ""}" data-emoji="${emoji}">
+            <button class="fr-emoji-btn ${info.active ? "active" : ""}" data-emoji="${emoji}" title="${EMOJI_LABELS[emoji] || emoji}">
               ${emoji}<span class="fr-emoji-btn__count">${info.count || ""}</span>
             </button>`).join("")}
           <button class="fr-emoji-btn fr-emoji-btn--add" id="fr-add-emoji-btn" title="Emoji toevoegen">
@@ -525,7 +535,7 @@
     if (!bar) return;
     bar.innerHTML = `
       ${Object.entries(emojis).map(([emoji, info]) => `
-        <button class="fr-emoji-btn ${info.active ? "active" : ""}" data-emoji="${emoji}">
+        <button class="fr-emoji-btn ${info.active ? "active" : ""}" data-emoji="${emoji}" title="${EMOJI_LABELS[emoji] || emoji}">
           ${emoji}<span class="fr-emoji-btn__count">${info.count || ""}</span>
         </button>`).join("")}
       <button class="fr-emoji-btn fr-emoji-btn--add" id="fr-add-emoji-btn" title="Emoji toevoegen"><span class="fr-emoji-btn--add__plus">+</span></button>
@@ -838,7 +848,7 @@
           <span class="fr-header__count fr-header__count--loading">laden…</span>
         </div>
         <div class="fr-quick-reactions">
-          ${DEFAULT_EMOJIS.map(e => `<button class="fr-emoji-btn fr-emoji-btn--skeleton" disabled>${e}<span class="fr-emoji-btn__count"></span></button>`).join("")}
+          ${DEFAULT_EMOJIS.map(({ emoji, label }) => `<button class="fr-emoji-btn fr-emoji-btn--skeleton" disabled title="${label}">${emoji}<span class="fr-emoji-btn__count"></span></button>`).join("")}
         </div>
         ${insightsHtml}
         <div class="fr-compose">
