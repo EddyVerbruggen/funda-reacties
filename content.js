@@ -244,6 +244,18 @@
       }
     }
 
+    let rooms = findDd("aantal kamers");
+    if (rooms) {
+      rooms = rooms.replace("slaapkamers", "slk");
+      insights.push({icon: "🛏️", text: rooms});
+    }
+
+    const energyLabel = findDd("energielabel");
+    if (energyLabel && energyLabel.length <= 5) insights.push({ icon: "⚡", text: energyLabel });
+
+    const buildYear = findDd("bouwjaar");
+    if (buildYear && /^\d{4}$/.test(buildYear)) insights.push({ icon: "🏗️", text: buildYear });
+
     const areaStr = findDd("wonen", "woonoppervlakte", "gebruiksoppervlakte wonen");
     let livingArea = null;
     if (areaStr) { const m = areaStr.match(/([\d.,]+)\s*m/i); if (m) livingArea = parseInt(m[1].replace(/\./g, ""), 10); }
@@ -253,13 +265,6 @@
     } else if (livingArea > 0) {
       insights.push({ icon: "📋", text: `${livingArea} m² wonen` });
     }
-
-    const energyLabel = findDd("energielabel");
-    if (energyLabel && energyLabel.length <= 5) insights.push({ icon: "⚡", text: energyLabel });
-    const buildYear = findDd("bouwjaar");
-    if (buildYear && /^\d{4}$/.test(buildYear)) insights.push({ icon: "🏗️", text: buildYear });
-    const rooms = findDd("aantal kamers");
-    if (rooms) insights.push({ icon: "🛏️", text: rooms });
 
     return insights;
   }
@@ -387,12 +392,12 @@
       return { id: c.id, name: c.name, text: c.text, time: c.created_at, upvotes, downvotes, myVote: myVote ? myVote.vote_type : null, isOwn: c.user_id === userId };
     });
 
-    return { address: getPropertyAddress(), url: getPropertyUrl(), location: getPropertyLocation(), emojis, comments, priceHistory: priceHistory || [] };
+    return { address: getPropertyAddress(), url: getPropertyUrl(), location: getPropertyLocation(), emojis, comments, priceHistory: priceHistory || [], priceComparison: null };
   }
 
   // ---- Neighborhood ----
 
-  const SCOPE_LABELS = { street: "Zelfde straat", neighborhood: "Zelfde wijk", city: "Zelfde stad", region: "Zelfde regio", province: "Zelfde provincie" };
+  const SCOPE_LABELS = { street: "Zelfde straat", neighborhood: "Zelfde wijk", city: "Zelfde stad" };
 
   async function findNeighborhoodComments(currentPropertyId, currentLocation, limitPerScope = 3) {
     if (!currentLocation || Object.keys(currentLocation).length === 0) return [];
@@ -430,6 +435,10 @@
     const data = await loadReactions(propertyId);
     const insights = generateInsights();
     const neighborhoodGroups = await findNeighborhoodComments(propertyId, data.location);
+
+    // Haal prijs-per-m² vergelijking op (parallel, na upsertProperty in loadReactions)
+    const priceComparison = await getPricePerM2Comparison(propertyId);
+    const priceComparisonChip = renderPriceComparisonChip(priceComparison);
 
     dbg("property", propertyId, "address:", data.address, "comments:", data.comments.length, "user:", currentDisplayName);
 
@@ -469,6 +478,7 @@
 
         <div class="fr-insights">
           ${insights.map((i) => `<span class="fr-insight-chip"><span class="fr-insight-chip__icon">${i.icon}</span>${i.text}</span>`).join("")}
+          ${priceComparisonChip}
         </div>
 
         ${priceChangeBanner}
@@ -512,6 +522,43 @@
     `;
 
     return root;
+  }
+
+  /**
+   * Rendert een insight-chip die aangeeft of de prijs per m² hoger of lager is
+   * dan andere woningen in de straat / wijk / stad.
+   *
+   * @param {{ scope, pct_diff, own_price_per_m2, avg_price_per_m2, count } | null} comparison
+   */
+  function renderPriceComparisonChip(comparison) {
+    if (!comparison || comparison.scope === null || comparison.pct_diff === null) return "";
+
+    const pct     = parseFloat(comparison.pct_diff);
+    const count   = comparison.count;
+    const scope   = comparison.scope;
+
+    const scopeLabels = { street: 'dan straatgemiddelde', neighborhood: 'dan wijkgemiddelde', city: 'dan stadgemiddelde' };
+    const scopeLabel  = scopeLabels[scope] || 'dan buurtgemiddelde';
+
+    const absPct  = Math.abs(pct).toFixed(1).replace('.', ',');
+    const cheaper = pct < 0;
+
+    // Drempelwaarde: toon niets als het verschil < 1%
+    if (Math.abs(pct) < 1) {
+      return `<span class="fr-insight-chip fr-insight-chip--neutral" title="${count} woning${count !== 1 ? 'en' : ''} vergeleken ${scopeLabel}">≈ Marktconform/m² ${scopeLabel}</span>`;
+    }
+
+    const cls   = cheaper ? 'fr-insight-chip--cheaper' : 'fr-insight-chip--pricier';
+    const icon  = cheaper ? '↓' : '↑';
+    const label = cheaper
+      ? `${icon} ${absPct}% goedkoper/m² ${scopeLabel}`
+      : `${icon} ${absPct}% duurder/m² ${scopeLabel}`;
+
+    const avgFmt = comparison.avg_price_per_m2
+      ? `Gem. €\u00a0${Number(comparison.avg_price_per_m2).toLocaleString('nl-NL')}/m² (${count} woning${count !== 1 ? 'en' : ''})`
+      : '';
+
+    return `<span class="fr-insight-chip ${cls}" title="${escapeAttr(avgFmt)}">${escapeHtml(label)}</span>`;
   }
 
   /**

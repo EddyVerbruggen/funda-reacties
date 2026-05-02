@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Funda Reacties Database Schema
--- Supabase PostgreSQL — v1.1.5
+-- Supabase PostgreSQL — v1.2.1
 -- ============================================================================
 
 -- Enable UUID extension
@@ -22,6 +22,7 @@ DROP FUNCTION IF EXISTS notify_on_reaction();
 DROP FUNCTION IF EXISTS update_updated_at_column();
 DROP FUNCTION IF EXISTS track_property_view(TEXT, TEXT, BOOLEAN, TEXT);
 DROP FUNCTION IF EXISTS migrate_anonymous_comments(TEXT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS get_price_per_m2_comparison(TEXT);
 DROP FUNCTION IF EXISTS record_price_if_changed(TEXT, TEXT, INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS record_price_if_changed(TEXT, INTEGER, INTEGER);
 
@@ -61,13 +62,18 @@ CREATE TABLE IF NOT EXISTS properties (
   property_id TEXT NOT NULL UNIQUE,
   address TEXT,
   url TEXT,
-  location JSONB,
+  -- loc_* kolommen vervangen het oude JSONB location-veld (v1.2.1)
+  loc_street       TEXT,
+  loc_neighborhood TEXT,
+  loc_city         TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_properties_property_id ON properties(property_id);
-CREATE INDEX IF NOT EXISTS idx_properties_location ON properties USING GIN(location);
+CREATE INDEX IF NOT EXISTS idx_properties_property_id   ON properties(property_id);
+CREATE INDEX IF NOT EXISTS idx_properties_loc_street    ON properties(loc_city, loc_street);
+CREATE INDEX IF NOT EXISTS idx_properties_loc_hood      ON properties(loc_city, loc_neighborhood);
+CREATE INDEX IF NOT EXISTS idx_properties_loc_city      ON properties(loc_city);
 
 -- ============================================================================
 -- Comments Table
@@ -523,6 +529,120 @@ $func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- RLS-beleid: iedereen mag de functie aanroepen (SECURITY DEFINER regelt rechten)
 -- Geen extra GRANT nodig voor RPC-aanroepen via de anon key.
+
+-- ============================================================================
+-- get_price_per_m2_comparison (v1.2.0)
+--
+-- Vergelijkt de meest recente price_per_m2 van een woning met het gemiddelde
+-- van ANDERE woningen in dezelfde straat, wijk of stad (hiërarchische fallback).
+--
+-- Gebruikt de gedenormaliseerde loc_* kolommen op properties voor een
+-- efficiënte index-scan i.p.v. JSONB-operatoren.
+--
+-- Geeft terug:
+--   scope             : 'street' | 'neighborhood' | 'city' | null
+--   pct_diff          : percentage t.o.v. gemiddelde (negatief = goedkoper)
+--   own_price_per_m2  : de eigen prijs per m²
+--   avg_price_per_m2  : het gemiddelde van de vergelijkingsgroep
+--   count             : aantal woningen in de vergelijkingsgroep
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION get_price_per_m2_comparison(p_property_id TEXT)
+RETURNS JSONB AS $func$
+DECLARE
+  v_street   TEXT;
+  v_hood     TEXT;
+  v_city     TEXT;
+  v_own_pm2  INTEGER;
+  v_avg_pm2  NUMERIC;
+  v_count    INTEGER;
+  v_scope    TEXT;
+BEGIN
+  -- Haal locatie en meest recente price_per_m2 van de woning op
+  SELECT p.loc_street, p.loc_neighborhood, p.loc_city, h.price_per_m2
+    INTO v_street, v_hood, v_city, v_own_pm2
+    FROM properties p
+    JOIN property_price_history h ON h.property_id = p.property_id
+   WHERE p.property_id = p_property_id
+   ORDER BY h.recorded_at DESC
+   LIMIT 1;
+
+  IF v_own_pm2 IS NULL THEN
+    RETURN jsonb_build_object('scope', null, 'pct_diff', null,
+                              'own_price_per_m2', null, 'avg_price_per_m2', null, 'count', 0);
+  END IF;
+
+  -- ---- Straat (+ stad als disambiguatie) ----
+  IF v_street IS NOT NULL AND v_city IS NOT NULL THEN
+    SELECT AVG(last.price_per_m2), COUNT(*)
+      INTO v_avg_pm2, v_count
+      FROM properties p
+      -- Haal per woning alleen de meest recente price_per_m2 op
+      JOIN LATERAL (
+        SELECT price_per_m2
+          FROM property_price_history
+         WHERE property_id = p.property_id
+           AND price_per_m2 IS NOT NULL
+         ORDER BY recorded_at DESC
+         LIMIT 1
+      ) last ON true
+     WHERE p.property_id    != p_property_id
+       AND p.loc_street      = v_street
+       AND p.loc_city        = v_city;
+    IF v_count >= 1 THEN v_scope := 'street'; END IF;
+  END IF;
+
+  -- ---- Wijk ----
+  IF v_scope IS NULL AND v_hood IS NOT NULL AND v_city IS NOT NULL THEN
+    SELECT AVG(last.price_per_m2), COUNT(*)
+      INTO v_avg_pm2, v_count
+      FROM properties p
+      JOIN LATERAL (
+        SELECT price_per_m2
+          FROM property_price_history
+         WHERE property_id = p.property_id
+           AND price_per_m2 IS NOT NULL
+         ORDER BY recorded_at DESC
+         LIMIT 1
+      ) last ON true
+     WHERE p.property_id       != p_property_id
+       AND p.loc_neighborhood   = v_hood
+       AND p.loc_city           = v_city;
+    IF v_count >= 1 THEN v_scope := 'neighborhood'; END IF;
+  END IF;
+
+  -- ---- Stad ----
+  IF v_scope IS NULL AND v_city IS NOT NULL THEN
+    SELECT AVG(last.price_per_m2), COUNT(*)
+      INTO v_avg_pm2, v_count
+      FROM properties p
+      JOIN LATERAL (
+        SELECT price_per_m2
+          FROM property_price_history
+         WHERE property_id = p.property_id
+           AND price_per_m2 IS NOT NULL
+         ORDER BY recorded_at DESC
+         LIMIT 1
+      ) last ON true
+     WHERE p.property_id != p_property_id
+       AND p.loc_city     = v_city;
+    IF v_count >= 1 THEN v_scope := 'city'; END IF;
+  END IF;
+
+  IF v_scope IS NULL OR v_avg_pm2 IS NULL OR v_avg_pm2 = 0 THEN
+    RETURN jsonb_build_object('scope', null, 'pct_diff', null,
+                              'own_price_per_m2', v_own_pm2, 'avg_price_per_m2', null, 'count', 0);
+  END IF;
+
+  RETURN jsonb_build_object(
+    'scope',            v_scope,
+    'pct_diff',         ROUND(((v_own_pm2 - v_avg_pm2) / v_avg_pm2 * 100)::NUMERIC, 1),
+    'own_price_per_m2', v_own_pm2,
+    'avg_price_per_m2', ROUND(v_avg_pm2),
+    'count',            v_count
+  );
+END;
+$func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Verify
 SELECT table_name

@@ -279,11 +279,41 @@ async function upsertProperty(propertyId, address, url, location) {
   try {
     const { data, error } = await supabaseClient
       .from('properties')
-      .upsert({ property_id: propertyId, address, url, location, updated_at: new Date().toISOString() }, { onConflict: 'property_id' })
+      .upsert({
+        property_id:      propertyId,
+        address,
+        url,
+        loc_street:       location?.street       || null,
+        loc_neighborhood: location?.neighborhood || null,
+        loc_city:         location?.city         || null,
+        updated_at:       new Date().toISOString(),
+      }, { onConflict: 'property_id' })
       .select().single();
     if (error) { console.error('Error upserting property:', error); return null; }
     return data;
   } catch (error) { console.error('Error in upsertProperty:', error); return null; }
+}
+
+/**
+ * Vergelijkt de price_per_m2 van een woning met andere woningen in dezelfde
+ * straat, wijk of stad (hiërarchische fallback via server-side RPC).
+ *
+ * @param {string} propertyId
+ * @returns {{ scope, pct_diff, own_price_per_m2, avg_price_per_m2, count } | null}
+ */
+async function getPricePerM2Comparison(propertyId) {
+  if (!propertyId || !/^\d{6,}$/.test(propertyId)) return null;
+  try {
+    const { data, error } = await supabaseClient.rpc('get_price_per_m2_comparison', {
+      p_property_id: propertyId,
+    });
+    if (error) { console.error('[Funda Reacties] getPricePerM2Comparison fout:', error); return null; }
+    if (!data || data.scope === null) return null;
+    return data;
+  } catch (e) {
+    console.error('[Funda Reacties] getPricePerM2Comparison exception:', e);
+    return null;
+  }
 }
 
 async function trackPropertyView(propertyId) {
@@ -417,18 +447,28 @@ async function getVoteCounts(commentId) {
 async function getNeighborhoodComments(currentPropertyId, location, limitPerScope = 3) {
   try {
     if (!location || Object.keys(location).length === 0) return [];
-    const SCOPE_ORDER = ["street", "neighborhood", "city", "region", "province"];
+
+    // region en province worden nooit gevuld; alleen street/neighborhood/city
+    const SCOPE_ORDER = ['street', 'neighborhood', 'city'];
+    const LOC_COL = { street: 'loc_street', neighborhood: 'loc_neighborhood', city: 'loc_city' };
+
     const results = [];
     const seenCommentIds = new Set();
+
     for (const scope of SCOPE_ORDER) {
       if (!location[scope]) continue;
+      const col = LOC_COL[scope];
+
       const { data, error } = await supabaseClient
         .from('comments')
-        .select(`*, properties!inner(property_id, address, url, location)`)
+        .select(`*, properties!inner(property_id, address, url, ${col})`)
         .neq('property_id', currentPropertyId)
-        .contains('properties.location', { [scope]: location[scope] })
+        .eq(`properties.${col}`, location[scope])
+        // Stad-scope: ook filteren op city zodat straat/wijk-queries impliciet al stads-afgebakend zijn
+        .eq('properties.loc_city', location.city || '')
         .order('created_at', { ascending: false })
         .limit(limitPerScope * 2);
+
       if (error) { console.error(`Error fetching ${scope} comments:`, error); continue; }
       if (data?.length) {
         const unique = [];

@@ -216,20 +216,30 @@
   flex-wrap: wrap;
 }
 
-.fr-insight-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  background: var(--fr-bg-alt);
-  border-radius: 16px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--fr-text-muted);
-  border: 1px solid var(--fr-border);
-}
+.fr-insight-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; background: var(--fr-bg-alt); border-radius: 16px; font-size: 11px; font-weight: 600; color: var(--fr-text-muted); border: 1px solid var(--fr-border); }
 
 .fr-insight-chip__icon { font-size: 14px; }
+
+/* Prijs-per-m² vergelijking chips (v1.2.0) */
+.fr-insight-chip--cheaper {
+  background: #e6f4ec;
+  border-color: #b8dfc8;
+  color: #1f5c38;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+.fr-insight-chip--pricier {
+  background: #fef3ec;
+  border-color: #f0c8a8;
+  color: #7a3a10;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+.fr-insight-chip--neutral {
+  background: var(--fr-bg-alt);
+  border-color: var(--fr-border);
+  color: var(--fr-text-muted);
+}
 
 /* ---- Compose ---- */
 .fr-compose {
