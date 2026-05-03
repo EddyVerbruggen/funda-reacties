@@ -231,6 +231,7 @@ Funda Reacties voegt een reactiepaneel toe aan elke woningpagina op Funda.nl, zo
 Wat kun je doen?
 
 - Zie direct of de vraagprijs veranderd is sinds jouw laatste bezoek.
+- Bekijk de WOZ-waardeontwikkeling 📈 van de woning.
 - Reageer met tekst op een woning — deel je bezichtigingservaring of geef anderen een heads-up over bijvoorbeeld een lekkende kraan.
 - Gebruik emoji-reacties (🔥 😍 🏚️ 💰 😬 📍) voor een snelle indruk.
   Stem op reacties van anderen zodat de meest nuttige bovenaan komen.
