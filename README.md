@@ -126,10 +126,9 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 
 ### Toekomstige features
 
-- [ ] Buurt-aggregatie uitbreiden met regio en provincie
+- [ ] Aggregatie niveau "provincie" gebruiken?
 - [ ] Moderatie (rapporteer-knop, automatische spam-detectie)
 - [ ] Favorieten-monitoring — notificatie als er een reactie komt op je favoriet
-- [ ] Integratie met WOZ-data en CBS-statistieken
 - [ ] Dark mode
 - [ ] De mogelijkheid bieden om de huizen met de meeste 😍of 🏚️ te bekijken (per stad/hele land)
 
@@ -210,7 +209,7 @@ Bij elke wijziging:
 
 ```bash
 cd /Users/eddy/sandboxes
-zip -r funda-reacties-1.2.1.zip funda-reacties/ \
+zip -r funda-reacties-1.5.4.zip funda-reacties/ \
   --exclude "funda-reacties/.git/*" \
   --exclude "funda-reacties/.idea/*" \
   --exclude "funda-reacties/docs/*" \
@@ -228,6 +227,7 @@ Wat kun je doen?
 
 - Zie direct of de vraagprijs veranderd is sinds jouw laatste bezoek.
 - Bekijk de WOZ-waardeontwikkeling 📈 van de woning.
+- Zie hoe lang een woning te koop staat ten opzichte van het buurtgemiddelde.
 - Reageer met tekst op een woning — deel je bezichtigingservaring of geef anderen een heads-up over bijvoorbeeld een lekkende kraan.
 - Gebruik emoji-reacties (🔥 😍 🏚️ 💰 😬 📍) voor een snelle indruk.
   Stem op reacties van anderen zodat de meest nuttige bovenaan komen.

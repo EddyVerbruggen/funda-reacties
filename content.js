@@ -324,7 +324,7 @@
       // Geen publicatiedatum — toon alleen de gem. verkooptijd
       return `<div class="fr-sale-insight fr-sale-insight--neutral">
         <span class="fr-sale-insight__icon">⏱️</span>
-        <span class="fr-sale-insight__text">Gem. verkooptijd in deze buurt: <strong>${escapeHtml(avgFmt)}</strong></span>
+        <span class="fr-sale-insight__text">Gemiddelde verkooptijd in deze buurt: <strong>${escapeHtml(avgFmt)}</strong></span>
       </div>`;
     }
 
@@ -337,27 +337,27 @@
       // Nog ruim binnen gemiddelde
       cls   = 'fr-sale-insight--fast';
       icon  = '🟢';
-      label = `Slechts ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd in deze straat is ${avgFmt}.`;
+      label = `Slechts ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gemiddelde verkooptijd in deze buurt is ${avgFmt}.`;
     } else if (ratio < 1.0) {
       // Nadert het gemiddelde
       cls   = 'fr-sale-insight--approaching';
       icon  = '🟡';
-      label = `${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Nadert het gemiddelde.`;
+      label = `${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — nadert de gemiddelde verkooptijd van ${avgFmt} in deze buurt.`;
     } else if (ratio === 1.0) {
       // Is het gemiddelde
       cls   = 'fr-sale-insight--approaching';
       icon  = '🟡';
-      label = `${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Precies het gemiddelde.`;
+      label = `${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gemiddelde verkooptijd in deze buurt is ${avgFmt}. Precies het gemiddelde.`;
     } else if (ratio < 1.5) {
       // Licht boven het gemiddelde
       cls   = 'fr-sale-insight--slow';
       icon  = '🟠';
-      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Staat al langer dan gemiddeld te koop.`;
+      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gemiddelde verkooptijd in deze buurt is ${avgFmt}. Staat al langer dan gemiddeld te koop.`;
     } else {
       // Significant boven het gemiddelde
       cls   = 'fr-sale-insight--very-slow';
       icon  = '🔴';
-      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Flink langer dan gemiddeld — misschien onderhandelingsruimte?`;
+      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gemiddelde verkooptijd in deze buurt is ${avgFmt}. Flink langer dan gemiddeld — misschien onderhandelingsruimte?`;
     }
 
     return `<div class="fr-sale-insight ${cls}">
@@ -514,16 +514,17 @@
           const absDiff  = Math.abs(diff).toFixed(1).replace('.', ',');
 
           let trendTekst;
+          let detailTekst = "";
           if (Math.abs(diff) < 0.5) {
-            trendTekst = `WOZ-stijging ≈ stadstrend (+${wonStr}% / jaar)`;
+            trendTekst = `WOZ-stijging gelijk aan stadtrend (+${wonStr}% / jaar)`;
           } else if (diff > 0) {
-            trendTekst = `WOZ-stijging ${absDiff}% per jaar boven stadstrend`;
+            trendTekst = `WOZ-stijging ${absDiff}% per jaar boven stadtrend`;
+            detailTekst = ` — Woning +${wonStr}% / jaar tov stad +${cityStr}% / jaar`;
           } else {
-            trendTekst = `WOZ-stijging ${absDiff}% per jaar onder stadstrend`;
+            trendTekst = `WOZ-stijging ${absDiff}% per jaar onder stadtrend`;
+            detailTekst = ` — Woning +${wonStr}% / jaar tov stad +${cityStr}% / jaar`;
           }
-          // const detailTekst = `Woning +${wonStr}% / jaar tov stad +${cityStr}% / jaar (${fromJaar}–${toJaar}, ${cityGrowth.count} won.)`;
-          const detailTekst = `Woning +${wonStr}% / jaar tov stad +${cityStr}% / jaar`;
-          const tooltipTekst = `${trendTekst} — ${detailTekst}`;
+          const tooltipTekst = `${trendTekst}${detailTekst}`;
           trendInfoBtn = `<span class="fr-woz-info" data-tooltip="${escapeAttr(tooltipTekst)}">&#x2139;</span>`;
         }
       }
@@ -924,22 +925,22 @@
     const count   = comparison.count;
     const scope   = comparison.scope;
 
-    const scopeLabels = { street: 'dan straatgemiddelde', neighborhood: 'dan wijkgemiddelde', city: 'dan stadgemiddelde' };
-    const scopeLabel  = scopeLabels[scope] || 'dan buurtgemiddelde';
+    const scopeLabels = { street: 'straatgemiddelde', neighborhood: 'wijkgemiddelde', city: 'stadgemiddelde' };
+    const scopeLabel  = scopeLabels[scope] || 'buurtgemiddelde';
 
     const absPct  = Math.abs(pct).toFixed(1).replace('.', ',');
     const cheaper = pct < 0;
 
     // Drempelwaarde: toon niets als het verschil < 1%
     if (Math.abs(pct) < 1) {
-      return `<span class="fr-insight-chip fr-insight-chip--neutral" title="${count} woning${count !== 1 ? 'en' : ''} vergeleken ${scopeLabel}">≈ Marktconform/m² ${scopeLabel}</span>`;
+      return `<span class="fr-insight-chip fr-insight-chip--neutral" title="${count} woning${count !== 1 ? 'en' : ''} vergeleken ${scopeLabel}">prijs/m² conform ${scopeLabel}</span>`;
     }
 
     const cls   = cheaper ? 'fr-insight-chip--cheaper' : 'fr-insight-chip--pricier';
     const icon  = cheaper ? '↓' : '↑';
     const label = cheaper
-      ? `${icon} ${absPct}% goedkoper/m² ${scopeLabel}`
-      : `${icon} ${absPct}% duurder/m² ${scopeLabel}`;
+      ? `${icon} ${absPct}% goedkoper/m² dan ${scopeLabel}`
+      : `${icon} ${absPct}% duurder/m² dan ${scopeLabel}`;
 
     const avgFmt = comparison.avg_price_per_m2
       ? `Gem. €\u00a0${Number(comparison.avg_price_per_m2).toLocaleString('nl-NL')}/m² (${count} woning${count !== 1 ? 'en' : ''})`
