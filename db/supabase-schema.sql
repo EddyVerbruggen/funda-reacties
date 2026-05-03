@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Funda Reacties Database Schema
--- Supabase PostgreSQL — v1.2.1
+-- Supabase PostgreSQL — v1.3.2
 -- ============================================================================
 
 -- Enable UUID extension
@@ -25,10 +25,13 @@ DROP FUNCTION IF EXISTS migrate_anonymous_comments(TEXT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS get_price_per_m2_comparison(TEXT);
 DROP FUNCTION IF EXISTS record_price_if_changed(TEXT, TEXT, INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS record_price_if_changed(TEXT, INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS upsert_woz_history(TEXT, TEXT, JSONB);
+DROP FUNCTION IF EXISTS upsert_woz_history(TEXT, TEXT, JSONB, TEXT);
 
 DROP TABLE IF EXISTS email_notifications    CASCADE;
 DROP TABLE IF EXISTS votes                  CASCADE;
 DROP TABLE IF EXISTS property_price_history CASCADE;
+DROP TABLE IF EXISTS property_woz_history   CASCADE;
 DROP TABLE IF EXISTS emoji_reactions        CASCADE;
 DROP TABLE IF EXISTS comments               CASCADE;
 DROP TABLE IF EXISTS properties             CASCADE;
@@ -107,6 +110,44 @@ CREATE TABLE IF NOT EXISTS emoji_reactions (
 
 CREATE INDEX IF NOT EXISTS idx_emoji_reactions_property_id ON emoji_reactions(property_id);
 CREATE INDEX IF NOT EXISTS idx_emoji_reactions_user_id ON emoji_reactions(user_id);
+
+-- ============================================================================
+-- Property WOZ History Table (v1.3.1)
+--
+-- Slaat WOZ-waarden op per woning per peiljaar.
+-- Één rij per (property_id, peiljaar) — WOZ-waarden veranderen nooit achteraf.
+-- loc_city is gedenormaliseerd voor efficiënte stadsgemiddeld-queries.
+-- fetched_at geeft aan wanneer de data voor het laatst opgehaald is,
+-- zodat we de externe API niet vaker aanroepen dan nodig.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS property_woz_history (
+  id            UUID     PRIMARY KEY DEFAULT uuid_generate_v4(),
+  property_id   TEXT     NOT NULL REFERENCES properties(property_id) ON DELETE CASCADE,
+  peiljaar      SMALLINT NOT NULL,           -- bijv. 2024
+  woz_waarde    INTEGER  NOT NULL,           -- vastgesteldeWaarde in hele euros
+  fetched_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_woz_property_peiljaar UNIQUE (property_id, peiljaar)
+);
+
+CREATE INDEX IF NOT EXISTS idx_woz_history_property_id
+  ON property_woz_history(property_id);
+
+-- Aggregatie per stad/wijk/straat loopt via JOIN op properties.loc_*
+-- Geen gedenormaliseerde loc_city nodig: properties heeft al alle loc_-kolommen
+-- met bestaande indices op (loc_city), (loc_city, loc_neighborhood), etc.
+
+ALTER TABLE property_woz_history ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "WOZ history leesbaar voor iedereen"              ON property_woz_history;
+DROP POLICY IF EXISTS "WOZ history kan worden ingevoegd door iedereen"  ON property_woz_history;
+DROP POLICY IF EXISTS "WOZ history kan worden bijgewerkt door iedereen" ON property_woz_history;
+CREATE POLICY "WOZ history leesbaar voor iedereen"
+  ON property_woz_history FOR SELECT USING (true);
+CREATE POLICY "WOZ history kan worden ingevoegd door iedereen"
+  ON property_woz_history FOR INSERT WITH CHECK (true);
+CREATE POLICY "WOZ history kan worden bijgewerkt door iedereen"
+  ON property_woz_history FOR UPDATE USING (true);
 
 -- ============================================================================
 -- Property Price History Table (v1.1.4)
@@ -279,6 +320,55 @@ ALTER TABLE email_notifications ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Email notifications niet leesbaar voor clients" ON email_notifications;
 CREATE POLICY "Email notifications niet leesbaar voor clients"
   ON email_notifications FOR SELECT USING (false);
+
+-- ============================================================================
+-- upsert_woz_history (v1.3.2)
+--
+-- Slaat de WOZ-waarden van een woning op in de database.
+-- Locatie-informatie voor aggregaties (stad, wijk, straat) loopt via JOIN
+-- op de bestaande properties.loc_* kolommen — geen dubbele opslag nodig.
+--
+-- Parameters:
+--   p_property_id : de Funda property ID
+--   p_woz_data    : JSONB array van { peiljaar: int, woz_waarde: int }
+--
+-- Geeft terug: JSONB array van { peiljaar, woz_waarde } (alle opgeslagen rijen)
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION upsert_woz_history(
+  p_property_id TEXT,
+  p_woz_data    JSONB
+)
+RETURNS JSONB AS $func$
+DECLARE
+  v_item     JSONB;
+  v_peiljaar SMALLINT;
+  v_waarde   INTEGER;
+BEGIN
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_woz_data)
+  LOOP
+    v_peiljaar := (v_item->>'peiljaar')::SMALLINT;
+    v_waarde   := (v_item->>'woz_waarde')::INTEGER;
+
+    INSERT INTO property_woz_history
+      (property_id, peiljaar, woz_waarde, fetched_at)
+    VALUES
+      (p_property_id, v_peiljaar, v_waarde, NOW())
+    ON CONFLICT (property_id, peiljaar)
+      DO UPDATE SET fetched_at = NOW();   -- waarde zelf nooit overschrijven
+  END LOOP;
+
+  -- Stuur alle bekende jaren terug (gesorteerd)
+  RETURN (
+    SELECT jsonb_agg(
+      jsonb_build_object('peiljaar', peiljaar, 'woz_waarde', woz_waarde)
+      ORDER BY peiljaar ASC
+    )
+    FROM property_woz_history
+    WHERE property_id = p_property_id
+  );
+END;
+$func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
 -- record_price_if_changed (v1.1.4)
@@ -649,5 +739,5 @@ SELECT table_name
 FROM information_schema.tables
 WHERE table_schema = 'public'
   AND table_type = 'BASE TABLE'
-  AND table_name IN ('users', 'properties', 'comments', 'emoji_reactions', 'votes', 'email_notifications', 'property_price_history')
+  AND table_name IN ('users', 'properties', 'comments', 'emoji_reactions', 'votes', 'email_notifications', 'property_price_history', 'property_woz_history')
 ORDER BY table_name;

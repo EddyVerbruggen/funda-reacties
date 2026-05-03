@@ -514,6 +514,83 @@ function unsubscribeFromPropertyUpdates(channel) {
 }
 
 // ==========================================================================
+// WOZ-waarde opslag en cache
+// ==========================================================================
+
+/**
+ * Haalt gecachede WOZ-data op uit de database.
+ *
+ * Cache-strategie:
+ *   - WOZ-waarden worden één keer per jaar vastgesteld (voor het vorige jaar).
+ *     Zodra we in de DB een rij hebben voor het meest recente peiljaar
+ *     (= huidig jaar minus 1), hoeven we de externe API nooit meer te bellen.
+ *   - Als we voor dit property_id al rijen hebben EN we peiljaar (huidigJaar-1)
+ *     al kennen, is de cache compleet en sturen we de data terug.
+ *   - Anders sturen we null → client moet externe API aanroepen.
+ *
+ * @returns {Array<{ peildatum: string, vastgesteldeWaarde: number }>|null}
+ *          in hetzelfde formaat als de externe API, of null als cache leeg/onvolledig is
+ */
+async function getCachedWozData(propertyId) {
+  if (!propertyId) return null;
+  try {
+    const { data, error } = await supabaseClient
+      .from('property_woz_history')
+      .select('peiljaar, woz_waarde')
+      .eq('property_id', propertyId)
+      .order('peiljaar', { ascending: true });
+    if (error || !data || data.length === 0) return null;
+
+    // Check of het meest recente peiljaar (vorig jaar) al in de cache zit
+    const latestExpected = new Date().getFullYear() - 1;
+    const hasLatest = data.some(r => r.peiljaar >= latestExpected);
+    if (!hasLatest) return null;  // cache onvolledig — haal vers op
+
+    // Zet om naar het formaat van de externe API
+    return data.map(r => ({
+      peildatum: `${r.peiljaar}-01-01`,
+      vastgesteldeWaarde: r.woz_waarde,
+    }));
+  } catch (e) {
+    console.error('[Funda Reacties] getCachedWozData exception:', e);
+    return null;
+  }
+}
+
+/**
+ * Slaat WOZ-data op via de server-side RPC.
+ * Input is het ruwe API-formaat: [{ peildatum: 'yyyy-MM-dd', vastgesteldeWaarde: number }]
+ * Geeft de opgeslagen data terug in datzelfde formaat.
+ * Locatie-informatie voor aggregaties loopt via JOIN op properties.loc_* — geen extra param.
+ *
+ * @param {string} propertyId
+ * @param {Array<{peildatum: string, vastgesteldeWaarde: number}>} wozData
+ * @returns {Array<{peildatum: string, vastgesteldeWaarde: number}>|null}
+ */
+async function saveWozData(propertyId, wozData) {
+  if (!propertyId || !wozData || wozData.length === 0) return null;
+  try {
+    const payload = wozData.map(w => ({
+      peiljaar:   parseInt(w.peildatum.slice(0, 4), 10),
+      woz_waarde: w.vastgesteldeWaarde,
+    }));
+    const { data, error } = await supabaseClient.rpc('upsert_woz_history', {
+      p_property_id: propertyId,
+      p_woz_data:    payload,
+    });
+    if (error) { console.error('[Funda Reacties] saveWozData fout:', error); return null; }
+    // RPC geeft terug: [{ peiljaar, woz_waarde }]
+    return (data || []).map(r => ({
+      peildatum: `${r.peiljaar}-01-01`,
+      vastgesteldeWaarde: r.woz_waarde,
+    }));
+  } catch (e) {
+    console.error('[Funda Reacties] saveWozData exception:', e);
+    return null;
+  }
+}
+
+// ==========================================================================
 // Account Migratie — koppel anonieme comments aan Funda-account
 // ==========================================================================
 

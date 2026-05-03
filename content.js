@@ -216,6 +216,206 @@
       .trim();
   }
 
+  // ---- WOZ Data ----
+
+  /**
+   * Haalt WOZ-waarden op. Probeert eerst de DB-cache;
+   * valt terug op externe PDOK/Kadaster API-calls als de cache leeg of onvolledig is.
+   * Na een succesvolle externe fetch worden de waarden opgeslagen in de DB.
+   *
+   * @param {string} address  - bijv. "Anjelierstraat 4, Amsterdam"
+   * @param {string} propertyId
+   * @returns {Array<{peildatum, vastgesteldeWaarde}>|null}
+   */
+  async function fetchWozData(address, propertyId) {
+    // 1. Probeer de DB-cache (alleen voor bekende numeric property IDs)
+    if (/^\d{6,}$/.test(propertyId)) {
+      const cached = await getCachedWozData(propertyId);
+      if (cached) {
+        dbg('WOZ: cache hit (✔️ DB)', propertyId);
+        return cached;
+      }
+    }
+
+    // 2. Externe API-calls
+    try {
+      const suggestUrl = `https://api.pdok.nl/bzk/locatieserver/search/v3_1/suggest?q=${encodeURIComponent(address)}&rows=10`;
+      const suggestRes = await fetch(suggestUrl);
+      if (!suggestRes.ok) return null;
+      const suggestJson = await suggestRes.json();
+      const docs = suggestJson?.response?.docs;
+      if (!docs || docs.length === 0) return null;
+      const locatieId = docs[0].id;
+      if (!locatieId) return null;
+
+      const lookupUrl = `https://api.pdok.nl/bzk/locatieserver/search/v3_1/lookup?fl=*&id=${encodeURIComponent(locatieId)}`;
+      const lookupRes = await fetch(lookupUrl);
+      if (!lookupRes.ok) return null;
+      const lookupJson = await lookupRes.json();
+      const lookupDocs = lookupJson?.response?.docs;
+      if (!lookupDocs || lookupDocs.length === 0) return null;
+      const nummeraanduidingId = lookupDocs[0].nummeraanduiding_id;
+      if (!nummeraanduidingId) return null;
+
+      const wozUrl = `https://api.kadaster.nl/lvwoz/wozwaardeloket-api/v1/wozwaarde/nummeraanduiding/${encodeURIComponent(nummeraanduidingId)}`;
+      const wozRes = await fetch(wozUrl);
+      if (!wozRes.ok) return null;
+      const wozJson = await wozRes.json();
+      const wozWaarden = wozJson?.wozWaarden;
+      if (!wozWaarden || wozWaarden.length === 0) return null;
+
+      const sorted = [...wozWaarden].sort((a, b) => a.peildatum.localeCompare(b.peildatum));
+
+      // 3. Sla op in DB (fire-and-forget, niet awaiten zodat UI niet wacht)
+      if (/^\d{6,}$/.test(propertyId)) {
+        saveWozData(propertyId, sorted)
+          .then(() => dbg('WOZ: opgeslagen in DB', propertyId))
+          .catch(() => {});
+      }
+
+      return sorted;
+    } catch (e) {
+      dbg('WOZ fetch fout:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Rendert een compacte WOZ + vraagprijs grafiek als SVG.
+   * wozData: [{ peildatum: 'yyyy-MM-dd', vastgesteldeWaarde: number }]
+   * priceHistory: [{ recorded_at, price }] (nieuwste eerst)
+   */
+  function renderWozChart(wozData, priceHistory) {
+    if (!wozData || wozData.length === 0) return '';
+
+    // WOZ-punten
+    const wozPoints = wozData.map(w => ({
+      year: parseInt(w.peildatum.slice(0, 4), 10),
+      value: w.vastgesteldeWaarde,
+    }));
+
+    // Vraagprijzen: dedupliceer op jaar (meest recente per jaar)
+    const priceByYear = {};
+    if (priceHistory && priceHistory.length > 0) {
+      for (const p of [...priceHistory].reverse()) {
+        const yr = new Date(p.recorded_at).getFullYear();
+        priceByYear[yr] = p.price;
+      }
+    }
+    const currentPrice = parsePrice(getAskingPrice());
+    if (currentPrice) priceByYear[new Date().getFullYear()] = currentPrice;
+
+    const pricePoints = Object.entries(priceByYear)
+      .map(([yr, val]) => ({ year: parseInt(yr, 10), value: val }))
+      .sort((a, b) => a.year - b.year);
+
+    // Bereken WOZ-insight: vergelijk huidige vraagprijs met meest recente WOZ
+    const latestWoz     = wozPoints[wozPoints.length - 1];
+    const latestWozJaar = latestWoz.year;
+    const comparePrice  = currentPrice || (pricePoints.length > 0 ? pricePoints[pricePoints.length - 1].value : null);
+    let insightLabel = null;   // bijv. "+18% vs WOZ '25"
+    let insightColor = '#8a7e6e';
+    if (comparePrice && latestWoz.value > 0) {
+      const pct = ((comparePrice - latestWoz.value) / latestWoz.value) * 100;
+      const absPct = Math.abs(pct).toFixed(0);
+      const shortJaar = String(latestWozJaar).slice(2); // '25'
+      if (Math.abs(pct) < 2) {
+        insightLabel = `≈ WOZ '${shortJaar}`;
+        insightColor = '#8a7e6e';
+      } else if (pct > 0) {
+        insightLabel = `+${absPct}% tov WOZ '${shortJaar}`;
+        insightColor = pct > 30 ? '#c4534a' : '#d4943a';
+      } else {
+        insightLabel = `-${absPct}% tov WOZ '${shortJaar}`;
+        insightColor = '#4a9b6e';
+      }
+    }
+
+    // Alle jaren voor x-as
+    const allYears = [...new Set([
+      ...wozPoints.map(p => p.year),
+      ...pricePoints.map(p => p.year),
+    ])].sort();
+
+    if (allYears.length === 0) return '';
+
+    const allValues = [
+      ...wozPoints.map(p => p.value),
+      ...pricePoints.map(p => p.value),
+    ];
+    const minVal = Math.min(...allValues) * 0.9;
+    const maxVal = Math.max(...allValues) * 1.08;
+
+    // SVG layout
+    const W = 260, H = 110;
+    const padL = 46, padR = 8, padT = 18, padB = 26;
+    const chartW = W - padL - padR;
+    const chartH = H - padT - padB;
+
+    const xScale = year => padL + ((year - allYears[0]) / Math.max(allYears[allYears.length - 1] - allYears[0], 1)) * chartW;
+    const yScale = val  => padT + chartH - ((val - minVal) / (maxVal - minVal)) * chartH;
+
+    function toPolyline(pts) {
+      return pts.map(p => `${xScale(p.year).toFixed(1)},${yScale(p.value).toFixed(1)}`).join(' ');
+    }
+
+    const wozLine   = wozPoints.length > 1   ? `<polyline points="${toPolyline(wozPoints)}"   fill="none" stroke="#5b7fc4" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" />` : '';
+    const priceLine = pricePoints.length > 1 ? `<polyline points="${toPolyline(pricePoints)}" fill="none" stroke="#e86c2a" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 2" />` : '';
+
+    const wozDots = wozPoints.map(p =>
+      `<circle cx="${xScale(p.year).toFixed(1)}" cy="${yScale(p.value).toFixed(1)}" r="2.8" fill="#5b7fc4" />`
+    ).join('');
+    const priceDots = pricePoints.map(p =>
+      `<circle cx="${xScale(p.year).toFixed(1)}" cy="${yScale(p.value).toFixed(1)}" r="2.8" fill="#e86c2a" />`
+    ).join('');
+
+    // Y-as labels (3 niveaus)
+    function fmtK(v) {
+      if (v >= 1000000) return `€${(v/1000000).toFixed(1).replace('.',',')}M`;
+      return `€${Math.round(v/1000)}k`;
+    }
+    const yLabels = [minVal, (minVal + maxVal) / 2, maxVal].map(v => {
+      const y = yScale(v);
+      return `<text x="${padL - 4}" y="${y.toFixed(1)}" text-anchor="end" dominant-baseline="middle" font-size="8" fill="#8a7e6e">${fmtK(v)}</text>`;
+    }).join('');
+
+    // X-as labels
+    const step = allYears.length > 8 ? 2 : 1;
+    const xLabels = allYears.filter((_, i) => i % step === 0 || i === allYears.length - 1).map(yr => {
+      const x = xScale(yr);
+      return `<text x="${x.toFixed(1)}" y="${(H - padB + 10).toFixed(1)}" text-anchor="middle" font-size="8" fill="#8a7e6e">${yr}</text>`;
+    }).join('');
+
+    // Hulplijnen
+    const gridLines = [minVal, (minVal + maxVal) / 2, maxVal].map(v => {
+      const y = yScale(v);
+      return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="#e2ddd5" stroke-width="0.8" />`;
+    }).join('');
+
+    // Legenda links, insight-label rechts — beide op dezelfde rij onder de grafiek
+    const legendY  = H - padB + 20;
+    const legend = `
+      <circle cx="${padL + 2}" cy="${legendY}" r="3" fill="#5b7fc4" />
+      <text x="${padL + 8}" y="${legendY}" dominant-baseline="middle" font-size="8" fill="#5b7fc4" font-weight="600">WOZ</text>
+      <line x1="${padL + 34}" y1="${legendY}" x2="${padL + 44}" y2="${legendY}" stroke="#e86c2a" stroke-width="1.8" stroke-dasharray="4 2" />
+      <circle cx="${padL + 50}" cy="${legendY}" r="3" fill="#e86c2a" />
+      <text x="${padL + 56}" y="${legendY}" dominant-baseline="middle" font-size="8" fill="#e86c2a" font-weight="600">Vraagprijs</text>
+      ${insightLabel ? `<text x="${W - padR}" y="${legendY}" text-anchor="end" dominant-baseline="middle" font-size="8.5" fill="${insightColor}" font-weight="700">${insightLabel}</text>` : ''}
+    `;
+
+    return `
+      <div class="fr-woz-chart">
+        <div class="fr-woz-chart__title">📊 WOZ-waarde historie</div>
+        <svg viewBox="0 0 ${W} ${H + 14}" width="100%" style="display:block;overflow:visible" xmlns="http://www.w3.org/2000/svg">
+          ${gridLines}
+          <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + chartH}" stroke="#e2ddd5" stroke-width="0.8" />
+          ${wozLine}${priceLine}${wozDots}${priceDots}
+          ${yLabels}${xLabels}
+          ${legend}
+        </svg>
+      </div>`;
+  }
+
   // ---- Scraping helpers ----
 
   function generateInsights() {
@@ -436,9 +636,14 @@
     const insights = generateInsights();
     const neighborhoodGroups = await findNeighborhoodComments(propertyId, data.location);
 
-    // Haal prijs-per-m² vergelijking op (parallel, na upsertProperty in loadReactions)
-    const priceComparison = await getPricePerM2Comparison(propertyId);
+    // Haal prijs-per-m² vergelijking en WOZ-data parallel op
+    const [priceComparison, wozData] = await Promise.all([
+      getPricePerM2Comparison(propertyId),
+      fetchWozData(getPropertyAddress(), propertyId),
+    ]);
     const priceComparisonChip = renderPriceComparisonChip(priceComparison);
+    const wozChartHtml        = renderWozChart(wozData, data.priceHistory);
+    dbg('WOZ data:', wozData ? `${wozData.length} waarden` : 'niet gevonden');
 
     dbg("property", propertyId, "address:", data.address, "comments:", data.comments.length, "user:", currentDisplayName);
 
@@ -482,6 +687,7 @@
         </div>
 
         ${priceChangeBanner}
+        ${wozChartHtml}
 
         <div class="fr-compose">
           <div class="fr-compose__wrapper">

@@ -241,6 +241,8 @@
   color: var(--fr-text-muted);
 }
 
+/* WOZ vs vraagprijs chip-kleuren zijn verwerkt in de grafiek (v1.3.2) */
+
 /* ---- Compose ---- */
 .fr-compose {
   padding: 12px 14px;
@@ -588,4 +590,20 @@
 }
 .fr-price-banner__text {
   flex: 1;
+}
+
+/* ---- WOZ-waarde grafiek ---- */
+.fr-woz-chart {
+  padding: 10px 14px 6px;
+  border-bottom: 1px solid var(--fr-border);
+  background: var(--fr-bg);
+}
+
+.fr-woz-chart__title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--fr-text-muted);
+  margin-bottom: 6px;
 }
