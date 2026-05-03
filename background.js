@@ -82,11 +82,15 @@ function updateIcon(tabId, url) {
   }
 }
 
-// changeInfo.url vuurt zodra de navigatie begint, met de nieuwe URL —
-// dus funda→funda blijft blauw, funda→ander wordt direct grijs.
-// status:"complete" niet gebruiken: dat geeft het knipperende effect.
+// changeInfo.url vuurt bij navigatie naar een andere URL.
+// changeInfo.status === "loading" vuurt ook bij F5/reload op dezelfde URL.
+// Beide gevallen afhandelen zodat het icoontje altijd correct is.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.url !== undefined) updateIcon(tabId, changeInfo.url);
+  if (changeInfo.url !== undefined) {
+    updateIcon(tabId, changeInfo.url);
+  } else if (changeInfo.status === "loading" && tab.url) {
+    updateIcon(tabId, tab.url);
+  }
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
