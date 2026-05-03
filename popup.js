@@ -195,7 +195,7 @@
               <div class="city-row">
                 <span class="city-row__year">${row.peiljaar}</span>
                 <span class="city-row__val">${fmtWoz}</span>
-                <span class="city-row__sub">${groei !== null ? (parseFloat(groei) >= 0 ? '+' : '') + groei + '%' : ''} (${row.count} won.)</span>
+                <span class="city-row__sub">${groei !== null ? (parseFloat(groei) >= 0 ? '+' : '') + groei + '%' : ''} (${row.count} woningen)</span>
               </div>`;
           });
           cityStatsEl.innerHTML = rows.join('');
