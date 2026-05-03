@@ -600,6 +600,9 @@
 }
 
 .fr-woz-chart__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -607,3 +610,47 @@
   color: var(--fr-text-muted);
   margin-bottom: 6px;
 }
+
+/* Info-knopje met CSS-tooltip (opent omhoog) */
+.fr-woz-info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--fr-border);
+  font-size: 11px;
+  font-style: normal;
+  color: var(--fr-text-muted);
+  background: var(--fr-bg-alt);
+  cursor: default;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.fr-woz-info::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  width: 210px;
+  background: var(--fr-text);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 6px 9px;
+  border-radius: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 20;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.fr-woz-info:hover::after { opacity: 1; }

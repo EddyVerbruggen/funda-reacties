@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Funda Reacties Database Schema
--- Supabase PostgreSQL — v1.3.2
+-- Supabase PostgreSQL — v1.4.2
 -- ============================================================================
 
 -- Enable UUID extension
@@ -26,6 +26,9 @@ DROP FUNCTION IF EXISTS get_price_per_m2_comparison(TEXT);
 DROP FUNCTION IF EXISTS record_price_if_changed(TEXT, TEXT, INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS record_price_if_changed(TEXT, INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS upsert_woz_history(TEXT, TEXT, JSONB);
+DROP FUNCTION IF EXISTS get_woz_comparison(TEXT);
+DROP FUNCTION IF EXISTS get_city_woz_growth(TEXT, SMALLINT);
+DROP FUNCTION IF EXISTS get_city_woz_stats(TEXT, SMALLINT);
 DROP FUNCTION IF EXISTS upsert_woz_history(TEXT, TEXT, JSONB, TEXT);
 
 DROP TABLE IF EXISTS email_notifications    CASCADE;
@@ -730,6 +733,166 @@ BEGIN
     'own_price_per_m2', v_own_pm2,
     'avg_price_per_m2', ROUND(v_avg_pm2),
     'count',            v_count
+  );
+END;
+$func$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- get_city_woz_growth (v1.4.2)
+--
+-- Berekent de gemiddelde jaarlijkse WOZ-groei (CAGR) voor een stad.
+-- Alleen woningen waarvan het meest recent opgeslagen peiljaar gelijk is aan
+-- het gevraagde peiljaar worden meegenomen. Zo worden verouderde (niet meer
+-- bezochte) woningen automatisch uitgesloten.
+--
+-- Geeft terug:
+--   cagr_pct    : gemiddelde jaarlijkse groei in % (bijv. 5.2)
+--   from_jaar   : oudste peiljaar in berekening
+--   to_jaar     : nieuwste peiljaar in berekening (= meest recente actieve data)
+--   from_avg    : gemiddelde WOZ op from_jaar
+--   to_avg      : gemiddelde WOZ op to_jaar
+--   count       : aantal actieve woningen in de steekproef
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION get_city_woz_growth(p_city TEXT, p_years SMALLINT DEFAULT 8)
+RETURNS JSONB AS $func$
+DECLARE
+  v_latest_jaar SMALLINT;
+  v_from_jaar   SMALLINT;
+  v_to_jaar     SMALLINT;
+  v_from_avg    NUMERIC;
+  v_to_avg      NUMERIC;
+  v_count       INTEGER;
+  v_cagr        NUMERIC;
+BEGIN
+  -- Stap 1: bepaal het meest recente peiljaar waarvoor voldoende actieve
+  -- woningen beschikbaar zijn. 'Actief' = hun max(peiljaar) = dit peiljaar,
+  -- d.w.z. de extensie heeft ze recent genoeg bezocht om dit jaar op te slaan.
+  SELECT MAX(w.peiljaar)
+    INTO v_latest_jaar
+    FROM property_woz_history w
+    JOIN properties p ON p.property_id = w.property_id
+   WHERE p.loc_city = p_city
+     -- Woning is 'actief': meest recente peiljaar is hetzelfde als w.peiljaar
+     AND w.peiljaar = (
+       SELECT MAX(peiljaar) FROM property_woz_history
+        WHERE property_id = w.property_id
+     );
+
+  IF v_latest_jaar IS NULL THEN
+    RETURN jsonb_build_object('cagr_pct', null, 'from_jaar', null, 'to_jaar', null,
+                              'from_avg', null, 'to_avg', null, 'count', 0);
+  END IF;
+
+  v_to_jaar := v_latest_jaar;
+
+  -- Stap 2: count actieve woningen op het to-jaar
+  SELECT COUNT(*)
+    INTO v_count
+    FROM property_woz_history w
+    JOIN properties p ON p.property_id = w.property_id
+   WHERE p.loc_city = p_city
+     AND w.peiljaar = v_to_jaar
+     AND v_to_jaar  = (SELECT MAX(peiljaar) FROM property_woz_history WHERE property_id = w.property_id);
+
+  -- Stap 3: gemiddelde WOZ op to-jaar (alleen actieve woningen)
+  SELECT AVG(w.woz_waarde)
+    INTO v_to_avg
+    FROM property_woz_history w
+    JOIN properties p ON p.property_id = w.property_id
+   WHERE p.loc_city = p_city
+     AND w.peiljaar = v_to_jaar
+     AND v_to_jaar  = (SELECT MAX(peiljaar) FROM property_woz_history WHERE property_id = w.property_id);
+
+  -- Stap 4: from-jaar = oudste peiljaar binnen de periode waarvoor dezelfde
+  -- woningen ook data hebben (voor een eerlijke CAGR-berekening).
+  -- We nemen de actieve woningen van to-jaar en zoeken hun oudste gemeenschappelijke peiljaar.
+  SELECT MIN(w.peiljaar)
+    INTO v_from_jaar
+    FROM property_woz_history w
+    JOIN properties p ON p.property_id = w.property_id
+   WHERE p.loc_city = p_city
+     AND w.peiljaar >= (v_to_jaar - p_years)
+     -- Alleen woningen die ook actief zijn op to-jaar
+     AND EXISTS (
+       SELECT 1 FROM property_woz_history wx
+        WHERE wx.property_id = w.property_id
+          AND wx.peiljaar = v_to_jaar
+          AND v_to_jaar   = (SELECT MAX(peiljaar) FROM property_woz_history WHERE property_id = w.property_id)
+     );
+
+  IF v_from_jaar IS NULL OR v_from_jaar = v_to_jaar THEN
+    RETURN jsonb_build_object('cagr_pct', null, 'from_jaar', null, 'to_jaar', null,
+                              'from_avg', null, 'to_avg', null, 'count', 0);
+  END IF;
+
+  -- Stap 5: gemiddelde WOZ op from-jaar voor dezelfde actieve woningen
+  SELECT AVG(w.woz_waarde)
+    INTO v_from_avg
+    FROM property_woz_history w
+    JOIN properties p ON p.property_id = w.property_id
+   WHERE p.loc_city = p_city
+     AND w.peiljaar = v_from_jaar
+     AND EXISTS (
+       SELECT 1 FROM property_woz_history wx
+        WHERE wx.property_id = w.property_id
+          AND wx.peiljaar = v_to_jaar
+          AND v_to_jaar   = (SELECT MAX(peiljaar) FROM property_woz_history WHERE property_id = w.property_id)
+     );
+
+  IF v_from_avg IS NULL OR v_from_avg = 0 THEN
+    RETURN jsonb_build_object('cagr_pct', null, 'from_jaar', null, 'to_jaar', null,
+                              'from_avg', null, 'to_avg', null, 'count', 0);
+  END IF;
+
+  v_cagr := (POWER(v_to_avg / v_from_avg, 1.0 / (v_to_jaar - v_from_jaar)) - 1) * 100;
+
+  RETURN jsonb_build_object(
+    'cagr_pct',  ROUND(v_cagr::NUMERIC, 1),
+    'from_jaar', v_from_jaar,
+    'to_jaar',   v_to_jaar,
+    'from_avg',  ROUND(v_from_avg),
+    'to_avg',    ROUND(v_to_avg),
+    'count',     v_count
+  );
+END;
+$func$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- get_city_woz_stats (v1.4.2)
+--
+-- Berekent per peiljaar het gemiddelde en aantal WOZ-waarden voor een stad.
+-- Alleen woningen waarvan het meest recent opgeslagen peiljaar gelijk is aan
+-- het betreffende peiljaar worden meegenomen (actieve woningen).
+--
+-- Geeft terug: JSONB array van { peiljaar, avg_woz, count }
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION get_city_woz_stats(p_city TEXT, p_years SMALLINT DEFAULT 5)
+RETURNS JSONB AS $func$
+BEGIN
+  RETURN (
+    SELECT jsonb_agg(
+      jsonb_build_object('peiljaar', peiljaar, 'avg_woz', ROUND(avg_woz), 'count', cnt)
+      ORDER BY peiljaar ASC
+    )
+    FROM (
+      SELECT w.peiljaar,
+             AVG(w.woz_waarde) AS avg_woz,
+             COUNT(*)          AS cnt
+        FROM property_woz_history w
+        JOIN properties p ON p.property_id = w.property_id
+       WHERE p.loc_city = p_city
+         -- Alleen actieve woningen: meest recente peiljaar = dit peiljaar
+         AND w.peiljaar = (
+               SELECT MAX(peiljaar)
+                 FROM property_woz_history
+                WHERE property_id = w.property_id
+             )
+       GROUP BY w.peiljaar
+       ORDER BY w.peiljaar DESC
+       LIMIT p_years
+    ) sub
   );
 END;
 $func$ LANGUAGE plpgsql SECURITY DEFINER;

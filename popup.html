@@ -26,6 +26,17 @@
     .stat-card__value { font-size: 22px; font-weight: 700; color: #e86c2a; line-height: 1.1; }
     .stat-card__label { font-size: 10px; color: #8a7e6e; margin-top: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
     .popup__footer { text-align: center; padding-top: 12px; border-top: 1px solid #e2ddd5; font-size: 11px; color: #8a7e6e; }
+    .active-list { list-style: none; padding: 0; margin: 0; }
+    .active-item { padding: 7px 0; border-bottom: 1px solid #e2ddd5; }
+    .active-item:last-child { border-bottom: none; }
+    .active-item a { font-size: 12px; font-weight: 600; color: #e86c2a; text-decoration: none; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .active-item a:hover { text-decoration: underline; }
+    .active-item__meta { font-size: 11px; color: #8a7e6e; margin-top: 1px; }
+    .city-row { display: flex; justify-content: space-between; font-size: 12px; color: #5c5245; padding: 4px 0; border-bottom: 1px solid #e2ddd5; }
+    .city-row:last-child { border-bottom: none; }
+    .city-row__year { font-weight: 600; }
+    .city-row__val { color: #2c2416; font-weight: 700; }
+    .city-row__sub { font-size: 10px; color: #8a7e6e; }
   </style>
 </head>
 <body>
@@ -34,7 +45,7 @@
       <span class="popup__logo">🏠💬</span>
       <div>
         <div class="popup__title">Funda Reacties</div>
-        <div class="popup__subtitle">v1.3.2 · community edition</div>
+        <div class="popup__subtitle">v1.4.4 · community edition</div>
       </div>
     </div>
 
@@ -53,6 +64,16 @@
         <div class="stat-card"><div class="stat-card__value" id="stat-houses">…</div><div class="stat-card__label">Huizen<br/>bekeken</div></div>
         <div class="stat-card"><div class="stat-card__value" id="stat-comments">…</div><div class="stat-card__label">Reacties<br/>geplaatst</div></div>
       </div>
+    </div>
+
+    <div class="popup__section">
+      <div class="popup__section-title">Meest actieve bekeken woningen</div>
+      <div id="active-properties"><div class="diag-row"><span>Laden…</span></div></div>
+    </div>
+
+    <div class="popup__section" id="city-stats-section" style="display:none">
+      <div class="popup__section-title" id="city-stats-title">WOZ-ontwikkeling</div>
+      <div id="city-stats"></div>
     </div>
 
     <div class="popup__footer">Door de community, voor de community</div>

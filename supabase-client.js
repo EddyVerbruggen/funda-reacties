@@ -590,6 +590,96 @@ async function saveWozData(propertyId, wozData) {
   }
 }
 
+/**
+ * Haalt de gemiddelde jaarlijkse WOZ-groei (CAGR) op voor een stad,
+ * voor vergelijking met de groei van een individuele woning.
+ *
+ * @param {string} city    - lowercase stadsslug, bijv. 'amsterdam'
+ * @param {number} years   - hoeveel jaar terug (default 8)
+ * @returns {{ cagr_pct, from_jaar, to_jaar, from_avg, to_avg, count } | null}
+ */
+async function getCityWozGrowth(city, years = 8) {
+  if (!city) return null;
+  try {
+    const { data, error } = await supabaseClient.rpc('get_city_woz_growth', {
+      p_city:  city,
+      p_years: years,
+    });
+    if (error) { console.error('[Funda Reacties] getCityWozGrowth fout:', error); return null; }
+    if (!data || data.cagr_pct === null) return null;
+    return data;
+  } catch (e) {
+    console.error('[Funda Reacties] getCityWozGrowth exception:', e);
+    return null;
+  }
+}
+
+/**
+ * Haalt WOZ-statistieken per peiljaar op voor een stad (popup stadsoverzicht).
+ *
+ * @param {string} city   - lowercase stadsslug, bijv. 'amsterdam'
+ * @param {number} years  - aantal peiljaren terug (default 5)
+ * @returns {Array<{ peiljaar, avg_woz, count }>|null}
+ */
+async function getCityWozStats(city, years = 5) {
+  if (!city) return null;
+  try {
+    const { data, error } = await supabaseClient.rpc('get_city_woz_stats', {
+      p_city:  city,
+      p_years: years,
+    });
+    if (error) { console.error('[Funda Reacties] getCityWozStats fout:', error); return null; }
+    return data || null;
+  } catch (e) {
+    console.error('[Funda Reacties] getCityWozStats exception:', e);
+    return null;
+  }
+}
+
+/**
+ * Haalt de meest actief becommentarieerde woningen op die de gebruiker heeft bezocht.
+ * 'Actief' = meeste recente comments van anderen (niet van de user zelf).
+ *
+ * @param {string[]} propertyIds  - lijst van bekeken property_ids (uit properties_viewed)
+ * @param {number}   limit        - max aantal te tonen (default 3)
+ * @returns {Array<{ property_id, address, url, comment_count, latest_comment_at }>|null}
+ */
+async function getMostActiveViewedProperties(propertyIds, limit = 3) {
+  if (!propertyIds || propertyIds.length === 0) return null;
+  try {
+    const { data, error } = await supabaseClient
+      .from('comments')
+      .select('property_id, created_at, properties(address, url)')
+      .in('property_id', propertyIds)
+      .order('created_at', { ascending: false })
+      .limit(200);  // ruim ophalen, dan client-side aggregeren
+    if (error) { console.error('[Funda Reacties] getMostActiveViewedProperties fout:', error); return null; }
+    if (!data || data.length === 0) return null;
+
+    // Aggregeer per property_id: tel comments en onthoud meest recente
+    const byProp = {};
+    for (const row of data) {
+      if (!byProp[row.property_id]) {
+        byProp[row.property_id] = {
+          property_id: row.property_id,
+          address: row.properties?.address || row.property_id,
+          url: row.properties?.url || null,
+          comment_count: 0,
+          latest_comment_at: row.created_at,
+        };
+      }
+      byProp[row.property_id].comment_count++;
+    }
+
+    return Object.values(byProp)
+      .sort((a, b) => b.comment_count - a.comment_count || b.latest_comment_at.localeCompare(a.latest_comment_at))
+      .slice(0, limit);
+  } catch (e) {
+    console.error('[Funda Reacties] getMostActiveViewedProperties exception:', e);
+    return null;
+  }
+}
+
 // ==========================================================================
 // Account Migratie — koppel anonieme comments aan Funda-account
 // ==========================================================================
@@ -646,7 +736,8 @@ function titleCaseCity(str) {
 }
 
 function generateWhisperTexts(propertyData) {
-  const { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: rawCity, isMonument, plotArea } = propertyData;
+  const { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: rawCity, isMonument, plotArea,
+          wozWaarde, wozJaar, wozGroeiPct } = propertyData;
   const city = titleCaseCity(rawCity);
   const texts = [];
 
@@ -656,8 +747,32 @@ function generateWhisperTexts(propertyData) {
   }
 
   // ---- Groot perceel ----
-  if (plotArea > 500) {
+  if (plotArea > 600) {
     texts.push(`Het perceel is ${plotArea} m² — fijn als je van tuinieren houdt, maar houd rekening met de tijd en kosten die een grote tuin met zich meebrengt.`);
+  }
+
+  // ---- WOZ-waardeontwikkeling ----
+  if (texts.length < 2 && wozWaarde && wozJaar) {
+    const wozFmt = `€\u00a0${Math.round(wozWaarde / 1000)}k`;
+    if (wozGroeiPct !== null) {
+      const groeiStr = wozGroeiPct.toFixed(1).replace('.', ',');
+      if (wozGroeiPct > 8) {
+        texts.push(`WOZ-waarde (${wozJaar}: ${wozFmt}) is de afgelopen jaren fors gestegen — gem. +${groeiStr}%/jaar. Wijst op een populaire en gewilde omgeving.`);
+      } else if (wozGroeiPct < 2) {
+        texts.push(`De WOZ-waarde (${wozJaar}: ${wozFmt}) steeg maar beperkt, gem. +${groeiStr}%/jaar. Houd dat in het achterhoofd bij je waardering.`);
+      } else {
+        texts.push(`WOZ-waarde (${wozJaar}: ${wozFmt}), gem. stijging +${groeiStr}%/jaar. Dat is een solide waardeontwikkeling voor deze omgeving.`);
+      }
+    } else {
+      // Slechts 1 peiljaar beschikbaar
+      if (priceNum && wozWaarde > 0) {
+        const pct = Math.round(((priceNum - wozWaarde) / wozWaarde) * 100);
+        if (Math.abs(pct) >= 2) {
+          const richting = pct > 0 ? `${pct}% boven` : `${Math.abs(pct)}% onder`;
+          texts.push(`De vraagprijs ligt ${richting} de WOZ-waarde van ${wozJaar} (${wozFmt}). Dat is normaal, maar het geeft een referentiepunt voor je bod.`);
+        }
+      }
+    }
   }
 
   // ---- Prijscommentaar ----

@@ -281,11 +281,13 @@
   }
 
   /**
-   * Rendert een compacte WOZ + vraagprijs grafiek als SVG.
+   * Rendert een compacte WOZ + vraagprijs grafiek als SVG,
+   * met optioneel een WOZ-trendvergelijking direct onder de grafiek.
    * wozData: [{ peildatum: 'yyyy-MM-dd', vastgesteldeWaarde: number }]
    * priceHistory: [{ recorded_at, price }] (nieuwste eerst)
+   * cityGrowth: { cagr_pct, from_jaar, to_jaar, count } | null
    */
-  function renderWozChart(wozData, priceHistory) {
+  function renderWozChart(wozData, priceHistory, cityGrowth) {
     if (!wozData || wozData.length === 0) return '';
 
     // WOZ-punten
@@ -313,7 +315,7 @@
     const latestWoz     = wozPoints[wozPoints.length - 1];
     const latestWozJaar = latestWoz.year;
     const comparePrice  = currentPrice || (pricePoints.length > 0 ? pricePoints[pricePoints.length - 1].value : null);
-    let insightLabel = null;   // bijv. "+18% vs WOZ '25"
+    let insightLabel = null;   // bijv. "+18% tov WOZ '25"
     let insightColor = '#8a7e6e';
     if (comparePrice && latestWoz.value > 0) {
       const pct = ((comparePrice - latestWoz.value) / latestWoz.value) * 100;
@@ -403,9 +405,50 @@
       ${insightLabel ? `<text x="${W - padR}" y="${legendY}" text-anchor="end" dominant-baseline="middle" font-size="8.5" fill="${insightColor}" font-weight="700">${insightLabel}</text>` : ''}
     `;
 
+    // Bereken WOZ-trendvergelijking voor info-knopje in de grafiek-header
+    let trendInfoBtn = '';
+    if (cityGrowth && cityGrowth.cagr_pct !== null && wozData.length >= 2) {
+      const cityFromJaar = cityGrowth.from_jaar;
+      const cityToJaar   = cityGrowth.to_jaar;
+      const fromEntry = wozData.find(w => parseInt(w.peildatum.slice(0, 4), 10) === cityFromJaar)
+                     || wozData.find(w => parseInt(w.peildatum.slice(0, 4), 10) >= cityFromJaar);
+      const toEntry   = [...wozData].reverse().find(w => parseInt(w.peildatum.slice(0, 4), 10) === cityToJaar)
+                     || wozData[wozData.length - 1];
+
+      if (fromEntry && toEntry && fromEntry !== toEntry) {
+        const fromJaar = parseInt(fromEntry.peildatum.slice(0, 4), 10);
+        const toJaar   = parseInt(toEntry.peildatum.slice(0, 4), 10);
+        const years    = toJaar - fromJaar;
+        if (years > 0 && fromEntry.vastgesteldeWaarde > 0) {
+          const wonCagr  = (Math.pow(toEntry.vastgesteldeWaarde / fromEntry.vastgesteldeWaarde, 1 / years) - 1) * 100;
+          const cityCagr = parseFloat(cityGrowth.cagr_pct);
+          const diff     = wonCagr - cityCagr;
+          const wonStr   = wonCagr.toFixed(1).replace('.', ',');
+          const cityStr  = cityCagr.toFixed(1).replace('.', ',');
+          const absDiff  = Math.abs(diff).toFixed(1).replace('.', ',');
+
+          let trendTekst;
+          if (Math.abs(diff) < 0.5) {
+            trendTekst = `WOZ-stijging ≈ stadstrend (+${wonStr}% / jaar)`;
+          } else if (diff > 0) {
+            trendTekst = `WOZ-stijging ${absDiff}% per jaar boven stadstrend`;
+          } else {
+            trendTekst = `WOZ-stijging ${absDiff}% per jaar onder stadstrend`;
+          }
+          // const detailTekst = `Woning +${wonStr}% / jaar tov stad +${cityStr}% / jaar (${fromJaar}–${toJaar}, ${cityGrowth.count} won.)`;
+          const detailTekst = `Woning +${wonStr}% / jaar tov stad +${cityStr}% / jaar`;
+          const tooltipTekst = `${trendTekst} — ${detailTekst}`;
+          trendInfoBtn = `<span class="fr-woz-info" data-tooltip="${escapeAttr(tooltipTekst)}">&#x2139;</span>`;
+        }
+      }
+    }
+
     return `
       <div class="fr-woz-chart">
-        <div class="fr-woz-chart__title">📊 WOZ-waarde historie</div>
+        <div class="fr-woz-chart__title">
+          <span>📊 WOZ-waarde historie</span>
+          ${trendInfoBtn}
+        </div>
         <svg viewBox="0 0 ${W} ${H + 14}" width="100%" style="display:block;overflow:visible" xmlns="http://www.w3.org/2000/svg">
           ${gridLines}
           <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + chartH}" stroke="#e2ddd5" stroke-width="0.8" />
@@ -516,6 +559,25 @@
     }
 
     return { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: getCityFromPage(), isMonument, plotArea };
+  }
+
+  // wozData kan asynchroon meegegeven worden vanuit createPanel
+  // zodat de whispers er gebruik van kunnen maken
+  function enrichWhisperDataWithWoz(propertyData, wozData) {
+    if (!wozData || wozData.length === 0) return propertyData;
+    const latest = wozData[wozData.length - 1];
+    const wozWaarde = latest.vastgesteldeWaarde;
+    const wozJaar   = parseInt(latest.peildatum.slice(0, 4), 10);
+    // Bereken j-op-j gemiddelde stijging over beschikbare jaren
+    let wozGroeiPct = null;
+    if (wozData.length >= 2) {
+      const oldest = wozData[0];
+      const years  = wozJaar - parseInt(oldest.peildatum.slice(0, 4), 10);
+      if (years > 0 && oldest.vastgesteldeWaarde > 0) {
+        wozGroeiPct = (Math.pow(wozWaarde / oldest.vastgesteldeWaarde, 1 / years) - 1) * 100;
+      }
+    }
+    return { ...propertyData, wozWaarde, wozJaar, wozGroeiPct };
   }
 
   function parseDutchDate(str) {
@@ -636,14 +698,16 @@
     const insights = generateInsights();
     const neighborhoodGroups = await findNeighborhoodComments(propertyId, data.location);
 
-    // Haal prijs-per-m² vergelijking en WOZ-data parallel op
-    const [priceComparison, wozData] = await Promise.all([
+    // Haal prijs-per-m² vergelijking, WOZ-data en stads-WOZ-groei parallel op
+    const [priceComparison, wozData, cityWozGrowth] = await Promise.all([
       getPricePerM2Comparison(propertyId),
       fetchWozData(getPropertyAddress(), propertyId),
+      getCityWozGrowth(data.location?.city || null),
     ]);
     const priceComparisonChip = renderPriceComparisonChip(priceComparison);
-    const wozChartHtml        = renderWozChart(wozData, data.priceHistory);
+    const wozChartHtml        = renderWozChart(wozData, data.priceHistory, cityWozGrowth);
     dbg('WOZ data:', wozData ? `${wozData.length} waarden` : 'niet gevonden');
+    dbg('City WOZ growth:', cityWozGrowth);
 
     dbg("property", propertyId, "address:", data.address, "comments:", data.comments.length, "user:", currentDisplayName);
 
@@ -721,13 +785,13 @@
 
         ${renderNeighborhoodGroups(neighborhoodGroups, data.comments.length > 0)}
 
-        ${renderWhispers(getPropertyDataForWhisper())}
+        ${renderWhispers(enrichWhisperDataWithWoz(getPropertyDataForWhisper(), wozData))}
 
         <div class="fr-footer">Funda Reacties - voor en door de community</div>
       </div>
     `;
 
-    return root;
+    return { panel: root, commentCount: data.comments.length };
   }
 
   /**
@@ -999,8 +1063,12 @@
   function attachEvents(root) {
     const propertyId = getPropertyId();
 
-    loadReactions(propertyId).then((data) => {
-      attachEmojiBarEvents(root, data.emojis, propertyId);
+    // Haal emoji-counts op (lightweight — enkel die tabel, vermijdt dubbele loadReactions)
+    getEmojiCounts(propertyId, currentUserId).then(async (emojiCounts) => {
+      const emojis = {};
+      for (const { emoji } of DEFAULT_EMOJIS) emojis[emoji] = emojiCounts[emoji] || { count: 0, active: false };
+      for (const [emoji, info] of Object.entries(emojiCounts)) { if (!emojis[emoji]) emojis[emoji] = info; }
+      attachEmojiBarEvents(root, emojis, propertyId);
 
       document.addEventListener("click", () => {
         const picker = root.querySelector("#fr-emoji-picker");
@@ -1292,15 +1360,14 @@
     }
 
     try {
-      const panel = await createPanel();
+      const { panel, commentCount } = await createPanel();
       placeholder.replaceWith(panel);
       if (agentPanel) { panel.style.marginTop = "0"; panel.style.marginBottom = "16px"; }
       attachEvents(panel);
       await watchLoginState(panel);
       const propertyId = getPropertyId();
       if (/^\d{6,}$/.test(propertyId)) trackPropertyView(propertyId);
-      const data = await loadReactions(getPropertyId());
-      chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: data.comments.length });
+      chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: commentCount });
       dbg("✅ Panel fully rendered");
     } catch (error) {
       console.error("[Funda Reacties] Error rendering panel:", error);
