@@ -30,11 +30,14 @@ DROP FUNCTION IF EXISTS get_woz_comparison(TEXT);
 DROP FUNCTION IF EXISTS get_city_woz_growth(TEXT, SMALLINT);
 DROP FUNCTION IF EXISTS get_city_woz_stats(TEXT, SMALLINT);
 DROP FUNCTION IF EXISTS upsert_woz_history(TEXT, TEXT, JSONB, TEXT);
+DROP FUNCTION IF EXISTS upsert_street_sale_stats(TEXT, TEXT, INTEGER);
+DROP FUNCTION IF EXISTS get_street_sale_stats(TEXT, TEXT);
 
 DROP TABLE IF EXISTS email_notifications    CASCADE;
 DROP TABLE IF EXISTS votes                  CASCADE;
 DROP TABLE IF EXISTS property_price_history CASCADE;
 DROP TABLE IF EXISTS property_woz_history   CASCADE;
+DROP TABLE IF EXISTS street_sale_stats      CASCADE;
 DROP TABLE IF EXISTS emoji_reactions        CASCADE;
 DROP TABLE IF EXISTS comments               CASCADE;
 DROP TABLE IF EXISTS properties             CASCADE;
@@ -42,9 +45,6 @@ DROP TABLE IF EXISTS users                  CASCADE;
 
 -- ============================================================================
 -- Users Table (v0.9.0)
--- Centrale gebruikerstabel. user_id = 'funda:email' of 'user_xxxx'.
--- properties_viewed: JSONB array van unieke property_id strings.
--- comment_count wordt NIET opgeslagen — realtime via COUNT op comments.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS users (
@@ -68,11 +68,10 @@ CREATE TABLE IF NOT EXISTS properties (
   property_id TEXT NOT NULL UNIQUE,
   address TEXT,
   url TEXT,
-  -- loc_* kolommen vervangen het oude JSONB location-veld (v1.2.1)
   loc_street       TEXT,
   loc_neighborhood TEXT,
   loc_city         TEXT,
-  loc_province     TEXT,   -- v1.4.3: provincie (bijv. 'gelderland')
+  loc_province     TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -97,8 +96,8 @@ CREATE TABLE IF NOT EXISTS comments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_comments_property_id ON comments(property_id);
-CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id);
-CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_comments_user_id     ON comments(user_id);
+CREATE INDEX IF NOT EXISTS idx_comments_created_at  ON comments(created_at DESC);
 
 -- ============================================================================
 -- Emoji Reactions Table
@@ -114,51 +113,34 @@ CREATE TABLE IF NOT EXISTS emoji_reactions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_emoji_reactions_property_id ON emoji_reactions(property_id);
-CREATE INDEX IF NOT EXISTS idx_emoji_reactions_user_id ON emoji_reactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_emoji_reactions_user_id     ON emoji_reactions(user_id);
 
 -- ============================================================================
 -- Property WOZ History Table (v1.3.1)
---
--- Slaat WOZ-waarden op per woning per peiljaar.
--- Één rij per (property_id, peiljaar) — WOZ-waarden veranderen nooit achteraf.
--- loc_city is gedenormaliseerd voor efficiënte stadsgemiddeld-queries.
--- fetched_at geeft aan wanneer de data voor het laatst opgehaald is,
--- zodat we de externe API niet vaker aanroepen dan nodig.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS property_woz_history (
   id            UUID     PRIMARY KEY DEFAULT uuid_generate_v4(),
   property_id   TEXT     NOT NULL REFERENCES properties(property_id) ON DELETE CASCADE,
-  peiljaar      SMALLINT NOT NULL,           -- bijv. 2024
-  woz_waarde    INTEGER  NOT NULL,           -- vastgesteldeWaarde in hele euros
+  peiljaar      SMALLINT NOT NULL,
+  woz_waarde    INTEGER  NOT NULL,
   fetched_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_woz_property_peiljaar UNIQUE (property_id, peiljaar)
 );
 
-CREATE INDEX IF NOT EXISTS idx_woz_history_property_id
-  ON property_woz_history(property_id);
-
--- Aggregatie per stad/wijk/straat loopt via JOIN op properties.loc_*
--- Geen gedenormaliseerde loc_city nodig: properties heeft al alle loc_-kolommen
--- met bestaande indices op (loc_city), (loc_city, loc_neighborhood), etc.
+CREATE INDEX IF NOT EXISTS idx_woz_history_property_id ON property_woz_history(property_id);
 
 ALTER TABLE property_woz_history ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "WOZ history leesbaar voor iedereen"              ON property_woz_history;
 DROP POLICY IF EXISTS "WOZ history kan worden ingevoegd door iedereen"  ON property_woz_history;
 DROP POLICY IF EXISTS "WOZ history kan worden bijgewerkt door iedereen" ON property_woz_history;
-CREATE POLICY "WOZ history leesbaar voor iedereen"
-  ON property_woz_history FOR SELECT USING (true);
-CREATE POLICY "WOZ history kan worden ingevoegd door iedereen"
-  ON property_woz_history FOR INSERT WITH CHECK (true);
-CREATE POLICY "WOZ history kan worden bijgewerkt door iedereen"
-  ON property_woz_history FOR UPDATE USING (true);
+CREATE POLICY "WOZ history leesbaar voor iedereen"              ON property_woz_history FOR SELECT USING (true);
+CREATE POLICY "WOZ history kan worden ingevoegd door iedereen"  ON property_woz_history FOR INSERT WITH CHECK (true);
+CREATE POLICY "WOZ history kan worden bijgewerkt door iedereen" ON property_woz_history FOR UPDATE USING (true);
 
 -- ============================================================================
 -- Property Price History Table (v1.1.4)
--- Bijhoudt de vraagprijshistorie per woning.
--- Er wordt alleen een nieuwe rij ingevoegd als de prijs veranderd is
--- t.o.v. de vorige bekende prijs (via de record_price_if_changed RPC).
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS property_price_history (
@@ -169,11 +151,8 @@ CREATE TABLE IF NOT EXISTS property_price_history (
   price_per_m2  INTEGER
 );
 
-CREATE INDEX IF NOT EXISTS idx_price_history_property_id
-  ON property_price_history(property_id);
-
-CREATE INDEX IF NOT EXISTS idx_price_history_recorded_at
-  ON property_price_history(property_id, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_price_history_property_id  ON property_price_history(property_id);
+CREATE INDEX IF NOT EXISTS idx_price_history_recorded_at  ON property_price_history(property_id, recorded_at DESC);
 
 ALTER TABLE property_price_history
   ADD CONSTRAINT uq_price_history_property_date UNIQUE (property_id, recorded_at);
@@ -192,17 +171,38 @@ CREATE TABLE IF NOT EXISTS votes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_votes_comment_id ON votes(comment_id);
-CREATE INDEX IF NOT EXISTS idx_votes_user_id ON votes(user_id);
+CREATE INDEX IF NOT EXISTS idx_votes_user_id    ON votes(user_id);
+
+-- ============================================================================
+-- street_sale_stats (v1.5.0)
+--
+-- Slaat de gemiddelde verkooptijd per neighborhood-slug op, gescraped van
+-- https://www.funda.nl/informatie/<city>/<neighborhood>/
+-- Wordt maximaal 1x per week ververst.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS street_sale_stats (
+  id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  loc_city         TEXT NOT NULL,
+  loc_neighborhood TEXT NOT NULL,
+  avg_sale_days    INTEGER,
+  last_fetched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (loc_city, loc_neighborhood)
+);
+
+CREATE INDEX IF NOT EXISTS idx_street_sale_stats_city_neighborhood ON street_sale_stats(loc_city, loc_neighborhood);
 
 -- ============================================================================
 -- Row Level Security (RLS) Policies
 -- ============================================================================
 
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE properties ENABLE ROW LEVEL SECURITY;
-ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE emoji_reactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE properties       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE comments         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE emoji_reactions  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE votes            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE street_sale_stats ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users zijn leesbaar voor iedereen"  ON users;
 DROP POLICY IF EXISTS "Users kunnen worden aangemaakt"     ON users;
@@ -218,12 +218,12 @@ CREATE POLICY "Properties are viewable by everyone"    ON properties FOR SELECT 
 CREATE POLICY "Properties can be inserted by everyone" ON properties FOR INSERT WITH CHECK (true);
 CREATE POLICY "Properties can be updated by everyone"  ON properties FOR UPDATE USING (true);
 
-DROP POLICY IF EXISTS "Comments are viewable by everyone"      ON comments;
-DROP POLICY IF EXISTS "Comments can be inserted by everyone"   ON comments;
-DROP POLICY IF EXISTS "Comments can be deleted by owner"       ON comments;
-CREATE POLICY "Comments are viewable by everyone"      ON comments FOR SELECT USING (true);
-CREATE POLICY "Comments can be inserted by everyone"   ON comments FOR INSERT WITH CHECK (true);
-CREATE POLICY "Comments can be deleted by owner"       ON comments FOR DELETE USING (true);
+DROP POLICY IF EXISTS "Comments are viewable by everyone"    ON comments;
+DROP POLICY IF EXISTS "Comments can be inserted by everyone" ON comments;
+DROP POLICY IF EXISTS "Comments can be deleted by owner"     ON comments;
+CREATE POLICY "Comments are viewable by everyone"    ON comments FOR SELECT USING (true);
+CREATE POLICY "Comments can be inserted by everyone" ON comments FOR INSERT WITH CHECK (true);
+CREATE POLICY "Comments can be deleted by owner"     ON comments FOR DELETE USING (true);
 
 DROP POLICY IF EXISTS "Emoji reactions are viewable by everyone"    ON emoji_reactions;
 DROP POLICY IF EXISTS "Emoji reactions can be inserted by everyone" ON emoji_reactions;
@@ -240,6 +240,13 @@ CREATE POLICY "Votes are viewable by everyone"    ON votes FOR SELECT USING (tru
 CREATE POLICY "Votes can be inserted by everyone" ON votes FOR INSERT WITH CHECK (true);
 CREATE POLICY "Votes can be updated by everyone"  ON votes FOR UPDATE USING (true);
 CREATE POLICY "Votes can be deleted by everyone"  ON votes FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Street sale stats leesbaar voor iedereen"              ON street_sale_stats;
+DROP POLICY IF EXISTS "Street sale stats kan worden ingevoegd door iedereen"  ON street_sale_stats;
+DROP POLICY IF EXISTS "Street sale stats kan worden bijgewerkt door iedereen" ON street_sale_stats;
+CREATE POLICY "Street sale stats leesbaar voor iedereen"              ON street_sale_stats FOR SELECT USING (true);
+CREATE POLICY "Street sale stats kan worden ingevoegd door iedereen"  ON street_sale_stats FOR INSERT WITH CHECK (true);
+CREATE POLICY "Street sale stats kan worden bijgewerkt door iedereen" ON street_sale_stats FOR UPDATE USING (true);
 
 -- ============================================================================
 -- Functions & Triggers
@@ -287,9 +294,6 @@ GROUP BY property_id, emoji;
 
 -- ============================================================================
 -- Email Notifications Table (v0.8.4)
--- Rijen worden hier ingevoegd door de trigger hieronder.
--- De Database Webhook pikt elke INSERT op en roept de Edge Function aan,
--- die de email verstuurt via SendGrid en sent=true zet.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS email_notifications (
@@ -312,13 +316,10 @@ CREATE INDEX IF NOT EXISTS idx_notifications_sent ON email_notifications(sent);
 
 ALTER TABLE property_price_history ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Price history leesbaar voor iedereen"              ON property_price_history;
-DROP POLICY IF EXISTS "Price history kan worden ingevoegd door iedereen"  ON property_price_history;
-CREATE POLICY "Price history leesbaar voor iedereen"
-  ON property_price_history FOR SELECT USING (true);
-
-CREATE POLICY "Price history kan worden ingevoegd door iedereen"
-  ON property_price_history FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Price history leesbaar voor iedereen"             ON property_price_history;
+DROP POLICY IF EXISTS "Price history kan worden ingevoegd door iedereen" ON property_price_history;
+CREATE POLICY "Price history leesbaar voor iedereen"             ON property_price_history FOR SELECT USING (true);
+CREATE POLICY "Price history kan worden ingevoegd door iedereen" ON property_price_history FOR INSERT WITH CHECK (true);
 
 ALTER TABLE email_notifications ENABLE ROW LEVEL SECURITY;
 
@@ -328,16 +329,6 @@ CREATE POLICY "Email notifications niet leesbaar voor clients"
 
 -- ============================================================================
 -- upsert_woz_history (v1.3.2)
---
--- Slaat de WOZ-waarden van een woning op in de database.
--- Locatie-informatie voor aggregaties (stad, wijk, straat) loopt via JOIN
--- op de bestaande properties.loc_* kolommen — geen dubbele opslag nodig.
---
--- Parameters:
---   p_property_id : de Funda property ID
---   p_woz_data    : JSONB array van { peiljaar: int, woz_waarde: int }
---
--- Geeft terug: JSONB array van { peiljaar, woz_waarde } (alle opgeslagen rijen)
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION upsert_woz_history(
@@ -355,15 +346,12 @@ BEGIN
     v_peiljaar := (v_item->>'peiljaar')::SMALLINT;
     v_waarde   := (v_item->>'woz_waarde')::INTEGER;
 
-    INSERT INTO property_woz_history
-      (property_id, peiljaar, woz_waarde, fetched_at)
-    VALUES
-      (p_property_id, v_peiljaar, v_waarde, NOW())
+    INSERT INTO property_woz_history (property_id, peiljaar, woz_waarde, fetched_at)
+    VALUES (p_property_id, v_peiljaar, v_waarde, NOW())
     ON CONFLICT (property_id, peiljaar)
-      DO UPDATE SET fetched_at = NOW();   -- waarde zelf nooit overschrijven
+      DO UPDATE SET fetched_at = NOW();
   END LOOP;
 
-  -- Stuur alle bekende jaren terug (gesorteerd)
   RETURN (
     SELECT jsonb_agg(
       jsonb_build_object('peiljaar', peiljaar, 'woz_waarde', woz_waarde)
@@ -376,13 +364,10 @@ END;
 $func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
--- record_price_if_changed (v1.1.4)
+-- record_price_if_changed (v1.5.2)
 --
--- Controleert server-side of de meegegeven vraagprijs afwijkt van de
--- laatste bekende prijs voor deze woning. Zo ja, voegt een nieuwe rij in.
--- Server-side om race conditions te voorkomen (twee tabs tegelijk).
---
--- Geeft terug: { inserted: bool, previous_price_num: int|null }
+-- Slaat alleen een nieuwe rij op als de prijs daadwerkelijk veranderd is
+-- t.o.v. de allerlaatste bekende prijs (ongeacht datum).
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION record_price_if_changed(
@@ -392,28 +377,25 @@ CREATE OR REPLACE FUNCTION record_price_if_changed(
 )
 RETURNS JSONB AS $func$
 DECLARE
-  v_prev_price  INTEGER;
-  v_inserted    BOOLEAN;
+  v_prev_price    INTEGER;
+  v_prev_recorded DATE;
+  v_inserted      BOOLEAN := false;
 BEGIN
-  -- Haal de meest recente prijs op van een VORIGE dag (niet vandaag)
-  SELECT price
-    INTO v_prev_price
+  SELECT price, recorded_at
+    INTO v_prev_price, v_prev_recorded
     FROM property_price_history
    WHERE property_id = p_property_id
-     AND recorded_at < CURRENT_DATE
    ORDER BY recorded_at DESC
    LIMIT 1;
 
-  -- Upsert voor vandaag: maak aan of overschrijf als de prijs veranderd is.
-  -- ON CONFLICT op (property_id, recorded_at) zodat er per dag max 1 rij bestaat.
-  INSERT INTO property_price_history (property_id, recorded_at, price, price_per_m2)
-    VALUES (p_property_id, CURRENT_DATE, p_price, p_price_per_m2)
-  ON CONFLICT (property_id, recorded_at) DO UPDATE
-    SET price        = EXCLUDED.price,
-        price_per_m2 = EXCLUDED.price_per_m2
-  WHERE property_price_history.price IS DISTINCT FROM EXCLUDED.price;
-
-  v_inserted := FOUND;
+  IF v_prev_price IS DISTINCT FROM p_price THEN
+    INSERT INTO property_price_history (property_id, recorded_at, price, price_per_m2)
+      VALUES (p_property_id, CURRENT_DATE, p_price, p_price_per_m2)
+    ON CONFLICT (property_id, recorded_at) DO UPDATE
+      SET price        = EXCLUDED.price,
+          price_per_m2 = EXCLUDED.price_per_m2;
+    v_inserted := true;
+  END IF;
 
   RETURN jsonb_build_object(
     'inserted',       v_inserted,
@@ -424,10 +406,6 @@ $func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
 -- notify_on_reaction (v0.8.6)
---
--- Slaat een rij op in email_notifications als een ANDERE gebruiker (niet Eddy)
--- reageert. De Database Webhook triggert vervolgens de Edge Function die de
--- email verstuurt. SECURITY DEFINER zodat de INSERT RLS omzeilt.
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION notify_on_reaction()
@@ -438,12 +416,10 @@ DECLARE
   v_reactor_email    TEXT;
   v_eddy_email       TEXT := 'eddyverbruggen@gmail.com';
 BEGIN
-  -- Haal email op uit user_id (formaat: funda:email@domain.com)
   IF NEW.user_id LIKE 'funda:%' THEN
     v_reactor_email := SUBSTRING(NEW.user_id FROM 7);
   END IF;
 
-  -- Alleen doorgaan als het NIET Eddy is
   IF v_reactor_email IS NULL OR v_reactor_email != v_eddy_email THEN
     SELECT address, url INTO v_property_address, v_property_url
     FROM properties WHERE property_id = NEW.property_id;
@@ -456,7 +432,6 @@ BEGIN
         v_eddy_email, 'comment', NEW.name, v_reactor_email,
         NEW.text, NEW.property_id, v_property_address, v_property_url
       );
-
     ELSIF TG_TABLE_NAME = 'emoji_reactions' THEN
       INSERT INTO email_notifications (
         recipient_email, reaction_type, reactor_name, reactor_email,
@@ -484,18 +459,6 @@ CREATE TRIGGER trigger_notify_on_emoji
 
 -- ============================================================================
 -- track_property_view (v0.9.0)
---
--- Registreert dat een gebruiker een woning heeft bekeken.
--- Doet een upsert van de users-rij en voegt property_id toe aan de
--- properties_viewed JSONB array — maar alleen als die er nog niet in zit.
---
--- Parameters:
---   p_user_id      : het user_id van de kijker
---   p_display_name : weergavenaam (voor upsert bij nieuwe gebruikers)
---   p_is_anonymous : true = anoniem, false = Funda-account
---   p_property_id  : de bekeken woning
---
--- Geeft terug: { user_id, properties_viewed_count }
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION track_property_view(
@@ -506,10 +469,6 @@ CREATE OR REPLACE FUNCTION track_property_view(
 )
 RETURNS JSONB AS $func$
 BEGIN
-  -- Upsert de user-rij. Bij conflict:
-  --   - altijd display_name en last_seen_at bijwerken
-  --   - property_id alleen toevoegen als die nog niet in de array zit
-  --     (atomaire check+write, geen aparte SELECT nodig)
   INSERT INTO users (user_id, display_name, is_anonymous, properties_viewed, last_seen_at)
     VALUES (p_user_id, p_display_name, p_is_anonymous, jsonb_build_array(p_property_id), NOW())
   ON CONFLICT (user_id) DO UPDATE
@@ -518,8 +477,8 @@ BEGIN
         last_seen_at      = NOW(),
         properties_viewed = CASE
           WHEN users.properties_viewed @> jsonb_build_array(p_property_id)
-          THEN users.properties_viewed                                          -- al aanwezig: niet toevoegen
-          ELSE users.properties_viewed || jsonb_build_array(p_property_id)      -- nieuw: toevoegen
+          THEN users.properties_viewed
+          ELSE users.properties_viewed || jsonb_build_array(p_property_id)
         END;
 
   RETURN jsonb_build_object(
@@ -533,16 +492,6 @@ $func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
 -- migrate_anonymous_comments (v0.8.9)
---
--- Koppelt anonieme comments en emoji-reacties aan een Funda-account.
--- Wordt aangeroepen vanuit de client na login-detectie.
---
--- Parameters:
---   p_anon_id   : het oude anonieme user_id (bijv. 'user_1234_abc')
---   p_funda_id  : het nieuwe Funda user_id  (bijv. 'funda:eddy@gmail.com')
---   p_new_name  : de weergavenaam van het Funda-account
---
--- Geeft terug: aantal gemigreerde comments + emoji_reactions
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION migrate_anonymous_comments(
@@ -555,21 +504,16 @@ DECLARE
   v_comments_updated  INT;
   v_emojis_updated    INT;
 BEGIN
-  -- Sanity checks
   IF p_anon_id IS NULL OR p_anon_id = '' THEN RETURN jsonb_build_object('error', 'p_anon_id is leeg'); END IF;
   IF p_funda_id IS NULL OR p_funda_id = '' THEN RETURN jsonb_build_object('error', 'p_funda_id is leeg'); END IF;
-  -- Voorkom dat een Funda-account zichzelf overschrijft
   IF p_anon_id = p_funda_id THEN RETURN jsonb_build_object('comments', 0, 'emojis', 0); END IF;
 
-  -- Update comments: user_id en naam
   UPDATE comments
      SET user_id = p_funda_id,
          name    = COALESCE(NULLIF(p_new_name, ''), name)
    WHERE user_id = p_anon_id;
   GET DIAGNOSTICS v_comments_updated = ROW_COUNT;
 
-  -- Update emoji_reactions: user_id
-  -- Bij een conflict (zelfde emoji al als Funda-user gezet) verwijder de dubbele anonieme rij.
   UPDATE emoji_reactions
      SET user_id = p_funda_id
    WHERE user_id = p_anon_id
@@ -581,11 +525,8 @@ BEGIN
      );
   GET DIAGNOSTICS v_emojis_updated = ROW_COUNT;
 
-  -- Verwijder eventuele duplicate anonieme emoji-rijen die niet geupdatet konden worden
-  DELETE FROM emoji_reactions
-   WHERE user_id = p_anon_id;
+  DELETE FROM emoji_reactions WHERE user_id = p_anon_id;
 
-  -- Migreer ook de users-rij: kopieer properties_viewed van anoniem naar Funda-account
   INSERT INTO users (user_id, display_name, is_anonymous, properties_viewed, first_seen_at, last_seen_at)
     SELECT
       p_funda_id,
@@ -599,7 +540,6 @@ BEGIN
   ON CONFLICT (user_id) DO UPDATE
     SET display_name      = CASE WHEN p_new_name != '' THEN p_new_name ELSE users.display_name END,
         is_anonymous      = false,
-        -- Voeg bekeken woningen samen (union, duplicaten verwijderd)
         properties_viewed = (
           SELECT jsonb_agg(DISTINCT pid)
           FROM (
@@ -615,31 +555,14 @@ BEGIN
         ),
         last_seen_at      = NOW();
 
-  -- Verwijder de anonieme gebruikersrij
   DELETE FROM users WHERE user_id = p_anon_id;
 
   RETURN jsonb_build_object('comments', v_comments_updated, 'emojis', v_emojis_updated);
 END;
 $func$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- RLS-beleid: iedereen mag de functie aanroepen (SECURITY DEFINER regelt rechten)
--- Geen extra GRANT nodig voor RPC-aanroepen via de anon key.
-
 -- ============================================================================
 -- get_price_per_m2_comparison (v1.2.0)
---
--- Vergelijkt de meest recente price_per_m2 van een woning met het gemiddelde
--- van ANDERE woningen in dezelfde straat, wijk of stad (hiërarchische fallback).
---
--- Gebruikt de gedenormaliseerde loc_* kolommen op properties voor een
--- efficiënte index-scan i.p.v. JSONB-operatoren.
---
--- Geeft terug:
---   scope             : 'street' | 'neighborhood' | 'city' | null
---   pct_diff          : percentage t.o.v. gemiddelde (negatief = goedkoper)
---   own_price_per_m2  : de eigen prijs per m²
---   avg_price_per_m2  : het gemiddelde van de vergelijkingsgroep
---   count             : aantal woningen in de vergelijkingsgroep
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION get_price_per_m2_comparison(p_property_id TEXT)
@@ -653,7 +576,6 @@ DECLARE
   v_count    INTEGER;
   v_scope    TEXT;
 BEGIN
-  -- Haal locatie en meest recente price_per_m2 van de woning op
   SELECT p.loc_street, p.loc_neighborhood, p.loc_city, h.price_per_m2
     INTO v_street, v_hood, v_city, v_own_pm2
     FROM properties p
@@ -667,57 +589,44 @@ BEGIN
                               'own_price_per_m2', null, 'avg_price_per_m2', null, 'count', 0);
   END IF;
 
-  -- ---- Straat (+ stad als disambiguatie) ----
   IF v_street IS NOT NULL AND v_city IS NOT NULL THEN
     SELECT AVG(last.price_per_m2), COUNT(*)
       INTO v_avg_pm2, v_count
       FROM properties p
-      -- Haal per woning alleen de meest recente price_per_m2 op
       JOIN LATERAL (
-        SELECT price_per_m2
-          FROM property_price_history
-         WHERE property_id = p.property_id
-           AND price_per_m2 IS NOT NULL
-         ORDER BY recorded_at DESC
-         LIMIT 1
+        SELECT price_per_m2 FROM property_price_history
+         WHERE property_id = p.property_id AND price_per_m2 IS NOT NULL
+         ORDER BY recorded_at DESC LIMIT 1
       ) last ON true
-     WHERE p.property_id    != p_property_id
-       AND p.loc_street      = v_street
-       AND p.loc_city        = v_city;
+     WHERE p.property_id != p_property_id
+       AND p.loc_street   = v_street
+       AND p.loc_city     = v_city;
     IF v_count >= 1 THEN v_scope := 'street'; END IF;
   END IF;
 
-  -- ---- Wijk ----
   IF v_scope IS NULL AND v_hood IS NOT NULL AND v_city IS NOT NULL THEN
     SELECT AVG(last.price_per_m2), COUNT(*)
       INTO v_avg_pm2, v_count
       FROM properties p
       JOIN LATERAL (
-        SELECT price_per_m2
-          FROM property_price_history
-         WHERE property_id = p.property_id
-           AND price_per_m2 IS NOT NULL
-         ORDER BY recorded_at DESC
-         LIMIT 1
+        SELECT price_per_m2 FROM property_price_history
+         WHERE property_id = p.property_id AND price_per_m2 IS NOT NULL
+         ORDER BY recorded_at DESC LIMIT 1
       ) last ON true
-     WHERE p.property_id       != p_property_id
-       AND p.loc_neighborhood   = v_hood
-       AND p.loc_city           = v_city;
+     WHERE p.property_id      != p_property_id
+       AND p.loc_neighborhood  = v_hood
+       AND p.loc_city          = v_city;
     IF v_count >= 1 THEN v_scope := 'neighborhood'; END IF;
   END IF;
 
-  -- ---- Stad ----
   IF v_scope IS NULL AND v_city IS NOT NULL THEN
     SELECT AVG(last.price_per_m2), COUNT(*)
       INTO v_avg_pm2, v_count
       FROM properties p
       JOIN LATERAL (
-        SELECT price_per_m2
-          FROM property_price_history
-         WHERE property_id = p.property_id
-           AND price_per_m2 IS NOT NULL
-         ORDER BY recorded_at DESC
-         LIMIT 1
+        SELECT price_per_m2 FROM property_price_history
+         WHERE property_id = p.property_id AND price_per_m2 IS NOT NULL
+         ORDER BY recorded_at DESC LIMIT 1
       ) last ON true
      WHERE p.property_id != p_property_id
        AND p.loc_city     = v_city;
@@ -741,19 +650,6 @@ $func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
 -- get_city_woz_growth (v1.4.2)
---
--- Berekent de gemiddelde jaarlijkse WOZ-groei (CAGR) voor een stad.
--- Alleen woningen waarvan het meest recent opgeslagen peiljaar gelijk is aan
--- het gevraagde peiljaar worden meegenomen. Zo worden verouderde (niet meer
--- bezochte) woningen automatisch uitgesloten.
---
--- Geeft terug:
---   cagr_pct    : gemiddelde jaarlijkse groei in % (bijv. 5.2)
---   from_jaar   : oudste peiljaar in berekening
---   to_jaar     : nieuwste peiljaar in berekening (= meest recente actieve data)
---   from_avg    : gemiddelde WOZ op from_jaar
---   to_avg      : gemiddelde WOZ op to_jaar
---   count       : aantal actieve woningen in de steekproef
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION get_city_woz_growth(p_city TEXT, p_years SMALLINT DEFAULT 8)
@@ -767,19 +663,12 @@ DECLARE
   v_count       INTEGER;
   v_cagr        NUMERIC;
 BEGIN
-  -- Stap 1: bepaal het meest recente peiljaar waarvoor voldoende actieve
-  -- woningen beschikbaar zijn. 'Actief' = hun max(peiljaar) = dit peiljaar,
-  -- d.w.z. de extensie heeft ze recent genoeg bezocht om dit jaar op te slaan.
   SELECT MAX(w.peiljaar)
     INTO v_latest_jaar
     FROM property_woz_history w
     JOIN properties p ON p.property_id = w.property_id
    WHERE p.loc_city = p_city
-     -- Woning is 'actief': meest recente peiljaar is hetzelfde als w.peiljaar
-     AND w.peiljaar = (
-       SELECT MAX(peiljaar) FROM property_woz_history
-        WHERE property_id = w.property_id
-     );
+     AND w.peiljaar = (SELECT MAX(peiljaar) FROM property_woz_history WHERE property_id = w.property_id);
 
   IF v_latest_jaar IS NULL THEN
     RETURN jsonb_build_object('cagr_pct', null, 'from_jaar', null, 'to_jaar', null,
@@ -788,34 +677,25 @@ BEGIN
 
   v_to_jaar := v_latest_jaar;
 
-  -- Stap 2: count actieve woningen op het to-jaar
-  SELECT COUNT(*)
-    INTO v_count
+  SELECT COUNT(*) INTO v_count
     FROM property_woz_history w
     JOIN properties p ON p.property_id = w.property_id
    WHERE p.loc_city = p_city
      AND w.peiljaar = v_to_jaar
      AND v_to_jaar  = (SELECT MAX(peiljaar) FROM property_woz_history WHERE property_id = w.property_id);
 
-  -- Stap 3: gemiddelde WOZ op to-jaar (alleen actieve woningen)
-  SELECT AVG(w.woz_waarde)
-    INTO v_to_avg
+  SELECT AVG(w.woz_waarde) INTO v_to_avg
     FROM property_woz_history w
     JOIN properties p ON p.property_id = w.property_id
    WHERE p.loc_city = p_city
      AND w.peiljaar = v_to_jaar
      AND v_to_jaar  = (SELECT MAX(peiljaar) FROM property_woz_history WHERE property_id = w.property_id);
 
-  -- Stap 4: from-jaar = oudste peiljaar binnen de periode waarvoor dezelfde
-  -- woningen ook data hebben (voor een eerlijke CAGR-berekening).
-  -- We nemen de actieve woningen van to-jaar en zoeken hun oudste gemeenschappelijke peiljaar.
-  SELECT MIN(w.peiljaar)
-    INTO v_from_jaar
+  SELECT MIN(w.peiljaar) INTO v_from_jaar
     FROM property_woz_history w
     JOIN properties p ON p.property_id = w.property_id
-   WHERE p.loc_city = p_city
+   WHERE p.loc_city  = p_city
      AND w.peiljaar >= (v_to_jaar - p_years)
-     -- Alleen woningen die ook actief zijn op to-jaar
      AND EXISTS (
        SELECT 1 FROM property_woz_history wx
         WHERE wx.property_id = w.property_id
@@ -828,9 +708,7 @@ BEGIN
                               'from_avg', null, 'to_avg', null, 'count', 0);
   END IF;
 
-  -- Stap 5: gemiddelde WOZ op from-jaar voor dezelfde actieve woningen
-  SELECT AVG(w.woz_waarde)
-    INTO v_from_avg
+  SELECT AVG(w.woz_waarde) INTO v_from_avg
     FROM property_woz_history w
     JOIN properties p ON p.property_id = w.property_id
    WHERE p.loc_city = p_city
@@ -862,12 +740,6 @@ $func$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
 -- get_city_woz_stats (v1.4.2)
---
--- Berekent per peiljaar het gemiddelde en aantal WOZ-waarden voor een stad.
--- Alleen woningen waarvan het meest recent opgeslagen peiljaar gelijk is aan
--- het betreffende peiljaar worden meegenomen (actieve woningen).
---
--- Geeft terug: JSONB array van { peiljaar, avg_woz, count }
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION get_city_woz_stats(p_city TEXT, p_years SMALLINT DEFAULT 5)
@@ -885,10 +757,8 @@ BEGIN
         FROM property_woz_history w
         JOIN properties p ON p.property_id = w.property_id
        WHERE p.loc_city = p_city
-         -- Alleen actieve woningen: meest recente peiljaar = dit peiljaar
          AND w.peiljaar = (
-               SELECT MAX(peiljaar)
-                 FROM property_woz_history
+               SELECT MAX(peiljaar) FROM property_woz_history
                 WHERE property_id = w.property_id
              )
        GROUP BY w.peiljaar
@@ -899,10 +769,80 @@ BEGIN
 END;
 $func$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- ============================================================================
+-- upsert_street_sale_stats (v1.5.2)
+--
+-- Output-kolommen hebben een 'out_' prefix om naambotsing met tabelkolommen
+-- te voorkomen (PostgreSQL fout 42702: ambiguous column reference).
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION upsert_street_sale_stats(
+  p_city         TEXT,
+  p_neighborhood TEXT,
+  p_sale_days    INTEGER
+)
+RETURNS TABLE (
+  out_city             TEXT,
+  out_neighborhood     TEXT,
+  out_avg_sale_days    INTEGER,
+  out_last_fetched_at  TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  INSERT INTO street_sale_stats (loc_city, loc_neighborhood, avg_sale_days, last_fetched_at)
+  VALUES (p_city, p_neighborhood, p_sale_days, NOW())
+  ON CONFLICT (loc_city, loc_neighborhood)
+  DO UPDATE SET
+    avg_sale_days   = EXCLUDED.avg_sale_days,
+    last_fetched_at = NOW()
+  WHERE street_sale_stats.last_fetched_at < NOW() - INTERVAL '7 days'
+     OR street_sale_stats.avg_sale_days IS NULL;
+
+  RETURN QUERY
+    SELECT s.loc_city, s.loc_neighborhood, s.avg_sale_days, s.last_fetched_at
+    FROM street_sale_stats s
+    WHERE s.loc_city = p_city AND s.loc_neighborhood = p_neighborhood;
+END;
+$$;
+
+-- ============================================================================
+-- get_street_sale_stats (v1.5.2)
+--
+-- Output-kolommen hebben een 'out_' prefix om naambotsing met tabelkolommen
+-- te voorkomen (PostgreSQL fout 42702: ambiguous column reference).
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION get_street_sale_stats(
+  p_city         TEXT,
+  p_neighborhood TEXT
+)
+RETURNS TABLE (
+  out_avg_sale_days    INTEGER,
+  out_last_fetched_at  TIMESTAMPTZ,
+  out_needs_refresh    BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+    SELECT
+      s.avg_sale_days,
+      s.last_fetched_at,
+      (s.last_fetched_at < NOW() - INTERVAL '7 days') AS needs_refresh
+    FROM street_sale_stats s
+    WHERE s.loc_city = p_city AND s.loc_neighborhood = p_neighborhood;
+END;
+$$;
+
 -- Verify
 SELECT table_name
 FROM information_schema.tables
 WHERE table_schema = 'public'
   AND table_type = 'BASE TABLE'
-  AND table_name IN ('users', 'properties', 'comments', 'emoji_reactions', 'votes', 'email_notifications', 'property_price_history', 'property_woz_history')
+  AND table_name IN ('users', 'properties', 'comments', 'emoji_reactions', 'votes',
+                     'email_notifications', 'property_price_history', 'property_woz_history',
+                     'street_sale_stats')
 ORDER BY table_name;

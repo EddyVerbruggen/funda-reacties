@@ -216,6 +216,29 @@
       .trim();
   }
 
+  /**
+   * Leest de publicatiedatum van de woning op Funda ("Op Funda" in het populariteitsblok).
+   * HTML-patroon: <p class="m-0 font-bold">13-1-2026</p><p class="m-0">Op Funda</p>
+   * @returns {Date|null}
+   */
+  function getPublishedOnFundaDate() {
+    const section = document.querySelector('[data-testid="object-insights"]');
+    if (!section) return null;
+    const paragraphs = section.querySelectorAll('p.m-0');
+    for (let i = 0; i < paragraphs.length; i++) {
+      if ((paragraphs[i].textContent || '').trim() === 'Op Funda') {
+        // De tekst staat in de vorige <p> of een <p> met font-bold
+        const boldP = paragraphs[i - 1];
+        if (!boldP) continue;
+        const raw = (boldP.textContent || '').trim();
+        // formaat: 13-1-2026
+        const m = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+        if (m) return new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+      }
+    }
+    return null;
+  }
+
   // ---- WOZ Data ----
 
   /**
@@ -278,6 +301,69 @@
       dbg('WOZ fetch fout:', e);
       return null;
     }
+  }
+
+  /**
+   * Rendert een insight-chip (of banner) over de gem. verkooptijd in de straat
+   * versus het aantal dagen dat de woning al online staat.
+   *
+   * @param {number|null} avgSaleDays   - gem. verkooptijd in de straat
+   * @param {Date|null}   publishedDate - datum "Op Funda"
+   * @returns {string} HTML
+   */
+  function renderStreetSaleInsight(avgSaleDays, publishedDate) {
+    if (avgSaleDays === null || avgSaleDays === undefined) return '';
+
+    const daysOnline = publishedDate
+      ? Math.floor((Date.now() - publishedDate.getTime()) / 86400000)
+      : null;
+
+    const avgFmt = `${avgSaleDays} dag${avgSaleDays !== 1 ? 'en' : ''}`;
+
+    if (daysOnline === null) {
+      // Geen publicatiedatum — toon alleen de gem. verkooptijd
+      return `<div class="fr-sale-insight fr-sale-insight--neutral">
+        <span class="fr-sale-insight__icon">⏱️</span>
+        <span class="fr-sale-insight__text">Gem. verkooptijd in deze buurt: <strong>${escapeHtml(avgFmt)}</strong></span>
+      </div>`;
+    }
+
+    const ratio = daysOnline / avgSaleDays; // >1 = langer online dan gemiddeld
+    let cls = 'fr-sale-insight--neutral';
+    let icon = '⏱️';
+    let label;
+
+    if (ratio < 0.5) {
+      // Nog ruim binnen gemiddelde
+      cls   = 'fr-sale-insight--fast';
+      icon  = '🟢';
+      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd in deze straat is ${avgFmt}. Nog ruim op tijd.`;
+    } else if (ratio < 1.0) {
+      // Nadert het gemiddelde
+      cls   = 'fr-sale-insight--approaching';
+      icon  = '🟡';
+      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Nadert het gemiddelde.`;
+    } else if (ratio === 1.0) {
+      // Is het gemiddelde
+      cls   = 'fr-sale-insight--approaching';
+      icon  = '🟡';
+      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Precies het gemiddelde.`;
+    } else if (ratio < 1.5) {
+      // Licht boven het gemiddelde
+      cls   = 'fr-sale-insight--slow';
+      icon  = '🟠';
+      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Staat al langer dan gemiddeld te koop.`;
+    } else {
+      // Significant boven het gemiddelde
+      cls   = 'fr-sale-insight--very-slow';
+      icon  = '🔴';
+      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Flink langer dan gemiddeld — misschien onderhandelingsruimte?`;
+    }
+
+    return `<div class="fr-sale-insight ${cls}">
+      <span class="fr-sale-insight__icon">${icon}</span>
+      <span class="fr-sale-insight__text">${escapeHtml(label)}</span>
+    </div>`;
   }
 
   /**
@@ -698,16 +784,27 @@
     const insights = generateInsights();
     const neighborhoodGroups = await findNeighborhoodComments(propertyId, data.location);
 
-    // Haal prijs-per-m² vergelijking, WOZ-data en stads-WOZ-groei parallel op
-    const [priceComparison, wozData, cityWozGrowth] = await Promise.all([
+    // Haal prijs-per-m² vergelijking, WOZ-data, stads-WOZ-groei en straat-verkooptijd parallel op
+    const loc = data.location;
+    const streetSlug = loc?.neighborhood || null; // neighborhood-slug == straat-slug in Funda URLs
+    const publishedDate = getPublishedOnFundaDate();
+
+    const [priceComparison, wozData, cityWozGrowth, streetSaleStats] = await Promise.all([
       getPricePerM2Comparison(propertyId),
       fetchWozData(getPropertyAddress(), propertyId),
       getCityWozGrowth(data.location?.city || null),
+      (loc?.city && streetSlug)
+        ? getStreetSaleStats(loc.city, streetSlug)
+        : Promise.resolve({ avgSaleDays: null, lastFetchedAt: null }),
     ]);
-    const priceComparisonChip = renderPriceComparisonChip(priceComparison);
-    const wozChartHtml        = renderWozChart(wozData, data.priceHistory, cityWozGrowth);
+    const priceComparisonChip  = renderPriceComparisonChip(priceComparison);
+    const wozChartHtml         = renderWozChart(wozData, data.priceHistory, cityWozGrowth);
+    // Toon het "al x dagen online" blokje alleen als de woning nog niet verkocht/verhuurd is
+    const isSold = location.pathname.split('/').some(seg => FUNDA_URL_STATUS_SEGMENTS.has(seg));
+    const streetSaleInsightHtml = renderStreetSaleInsight(streetSaleStats.avgSaleDays, isSold ? null : publishedDate);
     dbg('WOZ data:', wozData ? `${wozData.length} waarden` : 'niet gevonden');
     dbg('City WOZ growth:', cityWozGrowth);
+    dbg('Street sale stats:', streetSaleStats, 'Published:', publishedDate);
 
     dbg("property", propertyId, "address:", data.address, "comments:", data.comments.length, "user:", currentDisplayName);
 
@@ -751,6 +848,7 @@
         </div>
 
         ${priceChangeBanner}
+        ${streetSaleInsightHtml}
         ${wozChartHtml}
 
         <div class="fr-compose">

@@ -682,6 +682,74 @@ async function getMostActiveViewedProperties(propertyIds, limit = 3) {
 }
 
 // ==========================================================================
+// Straat verkooptijd — gem. verkooptijd per straat (via /informatie/)
+// ==========================================================================
+
+/**
+ * Haalt de gem. verkooptijd op voor een straat:
+ * 1. Kijk eerst in de Supabase-cache (needs_refresh == false → geef terug).
+ * 2. Zo niet: scrape de /informatie/<city>/<street>/ pagina.
+ * 3. Sla het resultaat op via de RPC (max 1x per week).
+ *
+ * @param {string} city        - lowercase city slug, bijv. 'nijkerk'
+ * @param {string} streetSlug  - URL-slug, bijv. 'coltoflaan-van-oldenbarneveldstraat'
+ * @returns {{ avgSaleDays: number|null, lastFetchedAt: string|null }}
+ */
+async function getStreetSaleStats(city, streetSlug) {
+  if (!city || !streetSlug) return { avgSaleDays: null, lastFetchedAt: null };
+
+  try {
+    // 1. Probeer de DB-cache
+    const { data: cached, error: cacheErr } = await supabaseClient.rpc('get_street_sale_stats', {
+      p_city:         city,
+      p_neighborhood: streetSlug,
+    });
+
+    if (!cacheErr && cached && cached.length > 0) {
+      const row = cached[0];
+      if (!row.out_needs_refresh) {
+        dbg('StreetSaleStats: cache hit', city, streetSlug, row.out_avg_sale_days, 'dagen');
+        return { avgSaleDays: row.out_avg_sale_days, lastFetchedAt: row.out_last_fetched_at };
+      }
+      dbg('StreetSaleStats: cache vervallen, refresh nodig');
+    }
+
+    // 2. Scrape de /informatie/ pagina
+    const infoUrl = `https://www.funda.nl/informatie/${encodeURIComponent(city)}/${encodeURIComponent(streetSlug)}/`;
+    dbg('StreetSaleStats: scraping', infoUrl);
+    const res = await fetch(infoUrl, { credentials: 'omit', headers: { 'Accept': 'text/html' } });
+    if (!res.ok) { dbg('StreetSaleStats: fetch mislukt', res.status); return { avgSaleDays: null, lastFetchedAt: null }; }
+
+    const html = await res.text();
+
+    // Zoek naar het patroon "Gem. verkooptijd" gevolgd door een getal en "dagen"
+    // HTML-patroon: <div class="truncate">Gem. verkooptijd</div><div ...>19 dagen</div>
+    const match = html.match(/Gem\. verkooptijd[\s\S]{0,200}?(\d+)\s*dagen/i);
+    if (!match) {
+      dbg('StreetSaleStats: gem. verkooptijd niet gevonden in HTML');
+      return { avgSaleDays: null, lastFetchedAt: null };
+    }
+
+    const saleDays = parseInt(match[1], 10);
+    dbg('StreetSaleStats: gevonden', saleDays, 'dagen voor', city, streetSlug);
+
+    // 3. Sla op via RPC (upsert — alleen als >7 dagen geleden of nieuw)
+    const { data: saved, error: saveErr } = await supabaseClient.rpc('upsert_street_sale_stats', {
+      p_city:         city,
+      p_neighborhood: streetSlug,
+      p_sale_days:    saleDays,
+    });
+    if (saveErr) console.error('[Funda Reacties] upsert_street_sale_stats fout:', saveErr);
+
+    const lastFetchedAt = saved?.[0]?.last_fetched_at || new Date().toISOString();
+    return { avgSaleDays: saleDays, lastFetchedAt };
+  } catch (e) {
+    console.error('[Funda Reacties] getStreetSaleStats exception:', e);
+    return { avgSaleDays: null, lastFetchedAt: null };
+  }
+}
+
+// ==========================================================================
 // Account Migratie — koppel anonieme comments aan Funda-account
 // ==========================================================================
 

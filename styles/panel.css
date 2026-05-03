@@ -209,7 +209,7 @@
 
 /* ---- Insights ---- */
 .fr-insights {
-  padding: 6px 10px;
+  padding: 10px;
   border-bottom: 1px solid var(--fr-border);
   display: flex;
   gap: 5px;
@@ -654,3 +654,27 @@
 }
 
 .fr-woz-info:hover::after { opacity: 1; }
+
+/* ---- Street sale insight ---- */
+.fr-sale-insight {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 9px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 0;
+  border-width: 0 0 1px 0;
+  margin: 0 0 8px 0;
+  border-bottom: 1px solid var(--fr-border);
+}
+
+.fr-sale-insight__icon { flex-shrink: 0; font-size: 14px; line-height: 1.4; }
+.fr-sale-insight__text { color: var(--fr-text); }
+.fr-sale-insight__text strong { font-weight: 700; }
+
+.fr-sale-insight--neutral     { background: var(--fr-bg-alt); border-color: var(--fr-border); color: var(--fr-text-muted); }
+.fr-sale-insight--fast        { background: #e6f4ec; border-color: #b8dfc8; }
+.fr-sale-insight--approaching { background: #fefbe6; border-color: #f0e8a0; }
+.fr-sale-insight--slow        { background: #fef3ec; border-color: #f0d4b8; }
+.fr-sale-insight--very-slow   { background: #fdecea; border-color: #f5bfbb; }
