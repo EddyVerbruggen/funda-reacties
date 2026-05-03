@@ -576,7 +576,7 @@
 
     let rooms = findDd("aantal kamers");
     if (rooms) {
-      rooms = rooms.replace("slaapkamers", "slk");
+      rooms = rooms.replace("slaapkamers", "slk").replace("slaapkamer", "slk");
       insights.push({icon: "🛏️", text: rooms});
     }
 
