@@ -64,8 +64,34 @@ chrome.notifications.onClicked.addListener((notificationId) => {
   });
 });
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete" && tab.url && !tab.url.includes("funda.nl")) {
+// ---- Icoontje: grijs is de standaard (manifest), blauw alleen op funda.nl ----
+
+const ICON_COLORED = { 16: "icons/icon16.png", 48: "icons/icon48.png", 128: "icons/icon128.png" };
+const ICON_GREY    = { 16: "icons/icon16_grey.png", 48: "icons/icon48_grey.png", 128: "icons/icon128_grey.png" };
+
+function isFundaPage(url) {
+  return url && /funda\.nl/.test(url);
+}
+
+function updateIcon(tabId, url) {
+  if (isFundaPage(url)) {
+    chrome.action.setIcon({ path: ICON_COLORED, tabId });
+  } else {
+    chrome.action.setIcon({ path: ICON_GREY, tabId });
     chrome.action.setBadgeText({ text: "", tabId });
   }
+}
+
+// changeInfo.url vuurt zodra de navigatie begint, met de nieuwe URL —
+// dus funda→funda blijft blauw, funda→ander wordt direct grijs.
+// status:"complete" niet gebruiken: dat geeft het knipperende effect.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url !== undefined) updateIcon(tabId, changeInfo.url);
+});
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError) return;
+    updateIcon(tabId, tab.url);
+  });
 });

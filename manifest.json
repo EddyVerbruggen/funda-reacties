@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Funda Reacties",
-  "version": "1.4.5",
+  "version": "1.4.7",
   "description": "Reageer op woningen op Funda.nl — deel ervaringen over bezichtigingen, buurten en vraagprijzen met andere huizenzoekers.",
   "incognito": "split",
   "icons": {
@@ -43,8 +43,9 @@
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png"
+      "16": "icons/icon16_grey.png",
+      "48": "icons/icon48_grey.png",
+      "128": "icons/icon128_grey.png"
     }
   }
 }

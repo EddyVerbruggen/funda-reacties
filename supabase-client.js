@@ -286,6 +286,7 @@ async function upsertProperty(propertyId, address, url, location) {
         loc_street:       location?.street       || null,
         loc_neighborhood: location?.neighborhood || null,
         loc_city:         location?.city         || null,
+        loc_province:     location?.province     || null,
         updated_at:       new Date().toISOString(),
       }, { onConflict: 'property_id' })
       .select().single();

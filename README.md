@@ -130,12 +130,8 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 - [ ] Moderatie (rapporteer-knop, automatische spam-detectie)
 - [ ] Favorieten-monitoring — notificatie als er een reactie komt op je favoriet
 - [ ] Integratie met WOZ-data en CBS-statistieken
-- [ ] Export/import van reacties
 - [ ] Dark mode
-- [ ] Ontvang een melding zodra iemand reageert op een woning die jij ook hebt _bekeken_
-- [ ] Popup: teller voor geplaatste reacties en bekeken woningen
-- [ ] Popup: knop om een testnotificatie te versturen
-- [ ] De mogelijkheid bieden om de huizen met de meeste 😍of 🏚️ te bekijken
+- [ ] De mogelijkheid bieden om de huizen met de meeste 😍of 🏚️ te bekijken (per stad/hele land)
 
 ---
 

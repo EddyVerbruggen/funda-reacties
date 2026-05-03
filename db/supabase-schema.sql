@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Funda Reacties Database Schema
--- Supabase PostgreSQL — v1.4.2
+-- Supabase PostgreSQL — v1.4.3
 -- ============================================================================
 
 -- Enable UUID extension
@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS properties (
   loc_street       TEXT,
   loc_neighborhood TEXT,
   loc_city         TEXT,
+  loc_province     TEXT,   -- v1.4.3: provincie (bijv. 'gelderland')
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -80,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_properties_property_id   ON properties(property_i
 CREATE INDEX IF NOT EXISTS idx_properties_loc_street    ON properties(loc_city, loc_street);
 CREATE INDEX IF NOT EXISTS idx_properties_loc_hood      ON properties(loc_city, loc_neighborhood);
 CREATE INDEX IF NOT EXISTS idx_properties_loc_city      ON properties(loc_city);
+CREATE INDEX IF NOT EXISTS idx_properties_loc_province  ON properties(loc_province);
 
 -- ============================================================================
 -- Comments Table
