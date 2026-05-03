@@ -679,7 +679,34 @@
       if (parsed) daysOnline = Math.floor((Date.now() - parsed.getTime()) / 86400000);
     }
 
-    return { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: getCityFromPage(), isMonument, plotArea };
+    // VvE maandelijkse bijdrage als numerieke waarde (voor whisper-drempelcheck)
+    let vvePerMaand = null;
+    const vveSectionW = document.querySelector('#category-vvechecklist');
+    if (vveSectionW) {
+      for (const dt of vveSectionW.querySelectorAll('dt')) {
+        if ((dt.textContent || '').trim().toLowerCase() === 'periodieke bijdrage') {
+          const raw = (dt.nextElementSibling?.textContent || '').trim();
+          const m = raw.match(/€\s*([\d.,]+)/);
+          if (m) vvePerMaand = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+          break;
+        }
+      }
+    }
+    if (vvePerMaand === null) {
+      const overdrachtW = document.querySelector('#category-overdracht');
+      if (overdrachtW) {
+        for (const dt of overdrachtW.querySelectorAll('dt')) {
+          if ((dt.textContent || '').trim().toLowerCase() === 'servicekosten') {
+            const raw = (dt.nextElementSibling?.textContent || '').trim();
+            const m = raw.match(/€\s*([\d.,]+)/);
+            if (m) vvePerMaand = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+            break;
+          }
+        }
+      }
+    }
+
+    return { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: getCityFromPage(), isMonument, plotArea, vvePerMaand };
   }
 
   // wozData kan asynchroon meegegeven worden vanuit createPanel

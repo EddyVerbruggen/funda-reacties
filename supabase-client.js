@@ -806,13 +806,19 @@ function titleCaseCity(str) {
 
 function generateWhisperTexts(propertyData) {
   const { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: rawCity, isMonument, plotArea,
-          wozWaarde, wozJaar, wozGroeiPct } = propertyData;
+          wozWaarde, wozJaar, wozGroeiPct, vvePerMaand } = propertyData;
   const city = titleCaseCity(rawCity);
   const texts = [];
 
   // ---- Monument — altijd tonen als aanwezig ----
   if (isMonument) {
     texts.push('Dit is een monumentaal pand. Verbouwingen zijn aan strenge regels gebonden — controleer of alle benodigde vergunningen aanwezig en geldig zijn voordat je een bod uitbrengt.');
+  }
+
+  // ---- VvE servicekosten > €250/mnd ----
+  if (vvePerMaand !== null && vvePerMaand > 250) {
+    const jaarlasten = Math.round(vvePerMaand * 12).toLocaleString('nl-NL');
+    texts.push(`De VvE-bijdrage is €\u00a0${Math.round(vvePerMaand).toLocaleString('nl-NL')} per maand — dat is €\u00a0${jaarlasten} per jaar bovenop je hypotheeklasten. Controleer wat er precies inbegrepen is (verzekering, reservefonds, beheer) en of het reservefonds toereikend is voor toekomstig onderhoud.`);
   }
 
   // ---- Groot perceel ----
@@ -844,23 +850,6 @@ function generateWhisperTexts(propertyData) {
     }
   }
 
-  // ---- Prijscommentaar ----
-  if (texts.length < 3 && pricePerM2 && priceNum) {
-    if (pricePerM2 > 6000) {
-      texts.push(`Forse vraagprijs voor ${city || 'deze buurt'} — meer dan €${Math.round(pricePerM2 / 100) * 100}/m² is hier aan de hoge kant. Benieuwd of er ruimte zit.`);
-    } else if (pricePerM2 < 3000) {
-      texts.push(`Opvallend scherp geprijsd voor ${city || 'hier'} — €${Math.round(pricePerM2 / 100) * 100}/m² is aantrekkelijk. Let wel op de staat van onderhoud.`);
-    } else {
-      texts.push(`Vraagprijs lijkt marktconform voor ${city || 'deze buurt'}. Altijd de moeite waard om te bezichtigen en te vergelijken.`);
-    }
-  } else if (texts.length < 2 && priceNum) {
-    if (priceNum > 750000) {
-      texts.push('Stevige vraagprijs. Bij dit budget zijn afwerking en locatie cruciaal — een bouwkundige keuring is zeker aan te raden.');
-    } else if (priceNum < 300000) {
-      texts.push('Interessant startersprijsje. Goed controleren of de VvE gezond is als het een appartement betreft.');
-    }
-  }
-
   // ---- Energielabel-commentaar ----
   if (texts.length < 3 && energyLabel) {
     const label = energyLabel.trim().toUpperCase();
@@ -881,7 +870,26 @@ function generateWhisperTexts(propertyData) {
     } else if (year >= 1960 && year < 1985) {
       texts.push(`Jaren '${String(year).slice(2, 4)}-bouw: vaak solide, maar isolatie en kozijnen kunnen verouderd zijn. Controleer of er al dubbel glas in zit.`);
     } else if (year >= 2010) {
-      texts.push(`Relatief nieuw (${year}), dus de grote onderhoudsbeurt staat nog niet voor de deur. Wel goed de VvE-reservering checken als het een appartement is.`);
+      const vveTip = vvePerMaand !== null ? ' Wel goed de VvE-reservering checken.' : '';
+      texts.push(`Relatief nieuw (${year}), dus de grote onderhoudsbeurt staat nog niet voor de deur.${vveTip}`);
+    }
+  }
+
+  // ---- Prijscommentaar ----
+  if (texts.length < 3 && pricePerM2 && priceNum) {
+    if (pricePerM2 > 6000) {
+      texts.push(`Forse vraagprijs voor ${city || 'deze buurt'} — meer dan €${Math.round(pricePerM2 / 100) * 100}/m² is hier aan de hoge kant. Benieuwd of er ruimte zit.`);
+    } else if (pricePerM2 < 3000) {
+      texts.push(`Opvallend scherp geprijsd voor ${city || 'hier'} — €${Math.round(pricePerM2 / 100) * 100}/m² is aantrekkelijk. Let wel op de staat van onderhoud.`);
+    } else {
+      texts.push(`Vraagprijs lijkt marktconform voor ${city || 'deze buurt'}. Altijd de moeite waard om te bezichtigen en te vergelijken.`);
+    }
+  } else if (texts.length < 2 && priceNum) {
+    if (priceNum > 750000) {
+      texts.push('Stevige vraagprijs. Bij dit budget zijn afwerking en locatie cruciaal — een bouwkundige keuring is zeker aan te raden.');
+    } else if (priceNum < 300000) {
+      const vveCheck = vvePerMaand !== null ? ' Goed controleren of de VvE gezond is.' : '';
+      texts.push(`Interessante startersprijs.${vveCheck}`);
     }
   }
 
