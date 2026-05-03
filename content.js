@@ -337,17 +337,17 @@
       // Nog ruim binnen gemiddelde
       cls   = 'fr-sale-insight--fast';
       icon  = '🟢';
-      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd in deze straat is ${avgFmt}. Nog ruim op tijd.`;
+      label = `Slechts ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd in deze straat is ${avgFmt}.`;
     } else if (ratio < 1.0) {
       // Nadert het gemiddelde
       cls   = 'fr-sale-insight--approaching';
       icon  = '🟡';
-      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Nadert het gemiddelde.`;
+      label = `${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Nadert het gemiddelde.`;
     } else if (ratio === 1.0) {
       // Is het gemiddelde
       cls   = 'fr-sale-insight--approaching';
       icon  = '🟡';
-      label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Precies het gemiddelde.`;
+      label = `${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gem. verkooptijd hier is ${avgFmt}. Precies het gemiddelde.`;
     } else if (ratio < 1.5) {
       // Licht boven het gemiddelde
       cls   = 'fr-sale-insight--slow';
@@ -799,8 +799,27 @@
     ]);
     const priceComparisonChip  = renderPriceComparisonChip(priceComparison);
     const wozChartHtml         = renderWozChart(wozData, data.priceHistory, cityWozGrowth);
-    // Toon het "al x dagen online" blokje alleen als de woning nog niet verkocht/verhuurd is
-    const isSold = location.pathname.split('/').some(seg => FUNDA_URL_STATUS_SEGMENTS.has(seg));
+    // Toon het "al x dagen online" blokje alleen als de woning nog niet verkocht/verhuurd is.
+    // Controleer zowel de URL (voor woningen met een statussegment) als het Status-veld
+    // in de kenmerken-DL (voor "verkocht onder voorbehoud" e.d. die nog op een /koop/ URL staan).
+    const STATUS_SOLD_TERMS = [
+      'verkocht', 'verhuurd', 'onder bod', 'onder optie', 'geveild', 'ingetrokken',
+    ];
+    const isSoldByUrl = location.pathname.split('/').some(seg => FUNDA_URL_STATUS_SEGMENTS.has(seg));
+    const isSoldByDom = (() => {
+      const dts = document.querySelectorAll('dt');
+      for (const dt of dts) {
+        if ((dt.textContent || '').trim().toLowerCase() === 'status') {
+          const dd = dt.nextElementSibling;
+          if (dd) {
+            const status = (dd.textContent || '').trim().toLowerCase();
+            return STATUS_SOLD_TERMS.some(term => status.includes(term));
+          }
+        }
+      }
+      return false;
+    })();
+    const isSold = isSoldByUrl || isSoldByDom;
     const streetSaleInsightHtml = renderStreetSaleInsight(streetSaleStats.avgSaleDays, isSold ? null : publishedDate);
     dbg('WOZ data:', wozData ? `${wozData.length} waarden` : 'niet gevonden');
     dbg('City WOZ growth:', cityWozGrowth);

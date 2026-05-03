@@ -821,7 +821,7 @@ function generateWhisperTexts(propertyData) {
   }
 
   // ---- WOZ-waardeontwikkeling ----
-  if (texts.length < 2 && wozWaarde && wozJaar) {
+  if (texts.length < 3 && wozWaarde && wozJaar) {
     const wozFmt = `€\u00a0${Math.round(wozWaarde / 1000)}k`;
     if (wozGroeiPct !== null) {
       const groeiStr = wozGroeiPct.toFixed(1).replace('.', ',');
@@ -845,7 +845,7 @@ function generateWhisperTexts(propertyData) {
   }
 
   // ---- Prijscommentaar ----
-  if (texts.length < 2 && pricePerM2 && priceNum) {
+  if (texts.length < 3 && pricePerM2 && priceNum) {
     if (pricePerM2 > 6000) {
       texts.push(`Forse vraagprijs voor ${city || 'deze buurt'} — meer dan €${Math.round(pricePerM2 / 100) * 100}/m² is hier aan de hoge kant. Benieuwd of er ruimte zit.`);
     } else if (pricePerM2 < 3000) {
@@ -862,7 +862,7 @@ function generateWhisperTexts(propertyData) {
   }
 
   // ---- Energielabel-commentaar ----
-  if (texts.length < 2 && energyLabel) {
+  if (texts.length < 3 && energyLabel) {
     const label = energyLabel.trim().toUpperCase();
     if (['A', 'A+', 'A++', 'A+++', 'A++++'].includes(label)) {
       texts.push(`Energielabel ${label} — dat scheelt flink op de maandlasten. Prettig als de hypotheeknormen toch al krap zijn.`);
@@ -874,7 +874,7 @@ function generateWhisperTexts(propertyData) {
   }
 
   // ---- Bouwjaar-commentaar ----
-  if (texts.length < 2 && buildYear) {
+  if (texts.length < 3 && buildYear) {
     const year = parseInt(buildYear, 10);
     if (year < 1960) {
       texts.push(`Bouwjaar ${year} — charme genoeg, maar let op fundering, loodleidingen en elektrische installatie. Een bouwkundige keuring betaalt zichzelf terug.`);
@@ -886,7 +886,7 @@ function generateWhisperTexts(propertyData) {
   }
 
   // ---- Tijd online ----
-  if (texts.length < 2 && daysOnline !== null && daysOnline !== undefined) {
+  if (texts.length < 3 && daysOnline !== null && daysOnline !== undefined) {
     if (daysOnline > 60) {
       texts.push(`Al ${daysOnline} dagen online — vraag gerust waarom het nog niet verkocht is. Soms zit er een verhaal achter, soms is er gewoon onderhandelingsruimte.`);
     } else if (daysOnline <= 3) {
