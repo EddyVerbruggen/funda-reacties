@@ -596,6 +596,40 @@
       insights.push({ icon: "📋", text: `${livingArea} m² wonen` });
     }
 
+    // VvE servicekosten: primair uit VvE checklist "Periodieke bijdrage",
+    // fallback naar Overdracht "Servicekosten".
+    // Extraheer het bedrag uit strings als "Ja (€ 175,00 per maand)" of "€ 159 per maand".
+    const extractEuroBedrag = (raw) => {
+      const m = (raw || '').match(/€\s*([\d.,]+)/);
+      if (!m) return null;
+      return `€\u00a0${m[1].replace(/[.,]00$/, '')}`;
+    };
+    let servicekostenBedrag = null;
+    const vveSection = document.querySelector('#category-vvechecklist');
+    if (vveSection) {
+      for (const vveDt of vveSection.querySelectorAll('dt')) {
+        if ((vveDt.textContent || '').trim().toLowerCase() === 'periodieke bijdrage') {
+          servicekostenBedrag = extractEuroBedrag((vveDt.nextElementSibling?.textContent || '').trim());
+          break;
+        }
+      }
+    }
+    if (!servicekostenBedrag) {
+      // Fallback: Overdracht > Servicekosten
+      const overdrachtSection = document.querySelector('#category-overdracht');
+      if (overdrachtSection) {
+        for (const dt of overdrachtSection.querySelectorAll('dt')) {
+          if ((dt.textContent || '').trim().toLowerCase() === 'servicekosten') {
+            servicekostenBedrag = extractEuroBedrag((dt.nextElementSibling?.textContent || '').trim());
+            break;
+          }
+        }
+      }
+    }
+    if (servicekostenBedrag) {
+      insights.push({ icon: '🏢', text: `VvE ${servicekostenBedrag}/mnd` });
+    }
+
     return insights;
   }
 
