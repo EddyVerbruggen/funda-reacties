@@ -92,9 +92,9 @@
 
   function getPropertyId() {
     const path = location.pathname.replace(/\/+$/, "");
-    const numericMatch = path.match(/\/(\d{6,})$/);
+    const numericMatch = path.match(/\/(\d{6,})(?:\/|$)/);
     if (numericMatch) return numericMatch[1];
-    return path.replace(/\//g, "_").replace(/^_/, "");
+    return null;
   }
 
   function getPropertyAddress() {
@@ -1262,6 +1262,8 @@
   // ---- Injection ----
 
   function isDetailPage() {
+    // Sluit media-subpagina's uit (foto, video, 360, plattegrond, etc.)
+    if (/\/media\/|\/(foto|video|360|plattegrond|document)[\/\d]*/i.test(location.pathname)) return false;
     return /\/(detail\/koop|detail\/huur|koop\/[^/]+\/[^/]+|huur\/[^/]+\/[^/]+)/.test(location.pathname);
   }
 
@@ -1342,6 +1344,13 @@
   async function inject() {
     if (!isDetailPage()) return;
     if (document.getElementById("funda-reacties-root")) return;
+
+    // Controleer of we een geldig numeriek property ID hebben
+    const propertyId = getPropertyId();
+    if (!propertyId) {
+      dbg("Geen geldig numeriek property ID gevonden, panel niet injecteren.", location.pathname);
+      return;
+    }
 
     // Laad profiel (userId + displayName)
     const profile = await getUserProfile();
