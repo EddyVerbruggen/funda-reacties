@@ -108,7 +108,7 @@ funda-reacties/
 
 ## Architectuur
 
-### v1.6.2 — Funda Inzicht (current)
+### v1.6.0 — Funda Inzicht (current)
 
 Data wordt opgeslagen in een Supabase PostgreSQL database:
 
@@ -211,7 +211,7 @@ Bij elke wijziging:
 
 ```bash
 cd /Users/eddy/sandboxes
-zip -r funda-inzicht-1.6.2.zip funda-reacties/ \
+zip -r funda-inzicht-1.6.0.zip funda-reacties/ \
   --exclude "funda-reacties/.git/*" \
   --exclude "funda-reacties/.idea/*" \
   --exclude "funda-reacties/docs/*" \

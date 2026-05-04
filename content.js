@@ -565,15 +565,6 @@
 
     // parseDutchDate is defined later — forward-reference is fine inside a function body
 
-    const sinceStr = findDd("aangeboden sinds", "datum van aanmelding");
-    if (sinceStr) {
-      const parsed = parseDutchDate(sinceStr);
-      if (parsed) {
-        const days = Math.floor((Date.now() - parsed.getTime()) / 86400000);
-        if (days >= 0) insights.push({ icon: "📅", text: `${days} dagen online` });
-      }
-    }
-
     let rooms = findDd("aantal kamers");
     if (rooms) {
       rooms = rooms.replace("slaapkamers", "slk").replace("slaapkamer", "slk");
