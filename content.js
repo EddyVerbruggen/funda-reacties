@@ -217,6 +217,57 @@
   }
 
   /**
+   * Leest de verkoopgeschiedenis uit het blok dat zichtbaar is op verkochte woningen.
+   * HTML-patroon: <section> met <h2>Verkoopgeschiedenis</h2> en dl/dt/dd.
+   * @returns {{ aangebodSinds: Date|null, verkoopdatum: Date|null, looptijdDagen: number|null }}
+   */
+  function getVerkoopgeschiedenis() {
+    // Zoek de sectie op via de h2-tekst
+    let section = null;
+    for (const h2 of document.querySelectorAll('h2')) {
+      if ((h2.textContent || '').trim().toLowerCase() === 'verkoopgeschiedenis') {
+        section = h2.closest('section') || h2.parentElement;
+        break;
+      }
+    }
+    if (!section) return { aangebodSinds: null, verkoopdatum: null, looptijdDagen: null };
+
+    const result = { aangebodSinds: null, verkoopdatum: null, looptijdDagen: null };
+
+    const dts = section.querySelectorAll('dt');
+    for (const dt of dts) {
+      const label = (dt.textContent || '').trim().toLowerCase();
+      const dd = dt.nextElementSibling;
+      if (!dd) continue;
+      const waarde = (dd.textContent || '').trim();
+      if (label === 'aangeboden sinds') {
+        result.aangebodSinds = parseDutchDate(waarde);
+      } else if (label === 'verkoopdatum') {
+        result.verkoopdatum = parseDutchDate(waarde);
+      } else if (label === 'looptijd') {
+        // Formaten: "4 weken", "2 maanden", "19 dagen", "1 dag", "3 weken en 2 dagen"
+        let dagen = 0;
+        const wekenMatch = waarde.match(/(\d+)\s*we[ek|ken]+/i);
+        const maandenMatch = waarde.match(/(\d+)\s*maan[d|den]+/i);
+        const dagenMatch = waarde.match(/(\d+)\s*dag/i);
+        if (wekenMatch) dagen += parseInt(wekenMatch[1], 10) * 7;
+        if (maandenMatch) dagen += parseInt(maandenMatch[1], 10) * 30;
+        if (dagenMatch) dagen += parseInt(dagenMatch[1], 10);
+        if (dagen > 0) result.looptijdDagen = dagen;
+      }
+    }
+
+    // Fallback: bereken looptijd uit de twee datums als 'Looptijd' ontbreekt
+    if (result.looptijdDagen === null && result.aangebodSinds && result.verkoopdatum) {
+      result.looptijdDagen = Math.round(
+        (result.verkoopdatum.getTime() - result.aangebodSinds.getTime()) / 86400000
+      );
+    }
+
+    return result;
+  }
+
+  /**
    * Leest de publicatiedatum van de woning op Funda ("Op Funda" in het populariteitsblok).
    * HTML-patroon: <p class="m-0 font-bold">13-1-2026</p><p class="m-0">Op Funda</p>
    * @returns {Date|null}
@@ -312,6 +363,56 @@
    * @returns {string} HTML
    */
   function renderStreetSaleInsight(avgSaleDays, publishedDate) {
+    // Controleer ook de verkoopgeschiedenis (beschikbaar bij verkochte woningen)
+    const verkoop = getVerkoopgeschiedenis();
+    const werkelijkeLooptijd = verkoop.looptijdDagen; // bijv. 28 voor "4 weken"
+
+    // Als er een verkoopgeschiedenisblok is, toon dat in combinatie met het buurtgemiddelde
+    if (werkelijkeLooptijd !== null) {
+      if (avgSaleDays === null || avgSaleDays === undefined) {
+        // Geen buurtgemiddelde — toon alleen de werkelijke looptijd
+        const looptijdFmt = `${werkelijkeLooptijd} dag${werkelijkeLooptijd !== 1 ? 'en' : ''}`;
+        return `<div class="fr-sale-insight fr-sale-insight--neutral">
+          <span class="fr-sale-insight__icon">⏱️</span>
+          <span class="fr-sale-insight__text">Deze woning stond <strong>${escapeHtml(looptijdFmt)}</strong> te koop.</span>
+        </div>`;
+      }
+
+      // Vergelijk werkelijke looptijd met buurtgemiddelde
+      const avgFmt = `${avgSaleDays} dag${avgSaleDays !== 1 ? 'en' : ''}`;
+      const looptijdFmt = `${werkelijkeLooptijd} dag${werkelijkeLooptijd !== 1 ? 'en' : ''}`;
+      const ratio = werkelijkeLooptijd / avgSaleDays;
+      let cls, icon, label;
+
+      if (ratio <= 0.5) {
+        cls   = 'fr-sale-insight--fast';
+        icon  = '🟢';
+        label = `Snel verkocht in ${looptijdFmt} — buurtgemiddelde is ${avgFmt}.`;
+      } else if (ratio < 1.0) {
+        cls   = 'fr-sale-insight--fast';
+        icon  = '🟢';
+        label = `Verkocht in ${looptijdFmt} — sneller dan het buurtgemiddelde van ${avgFmt}.`;
+      } else if (ratio < 1.2) {
+        cls   = 'fr-sale-insight--approaching';
+        icon  = '🟡';
+        label = `Verkocht in ${looptijdFmt} — vrijwel conform het buurtgemiddelde van ${avgFmt}.`;
+      } else if (ratio < 2.0) {
+        cls   = 'fr-sale-insight--slow';
+        icon  = '🟠';
+        label = `Verkocht in ${looptijdFmt} — langer dan het buurtgemiddelde van ${avgFmt}.`;
+      } else {
+        cls   = 'fr-sale-insight--very-slow';
+        icon  = '🔴';
+        label = `Verkocht in ${looptijdFmt} — flink langer dan het buurtgemiddelde van ${avgFmt}.`;
+      }
+
+      return `<div class="fr-sale-insight ${cls}">
+        <span class="fr-sale-insight__icon">${icon}</span>
+        <span class="fr-sale-insight__text">${escapeHtml(label)}</span>
+      </div>`;
+    }
+
+    // Geen verkoopgeschiedenisblok — origineel gedrag voor actieve woningen
     if (avgSaleDays === null || avgSaleDays === undefined) return '';
 
     const daysOnline = publishedDate
@@ -334,27 +435,22 @@
     let label;
 
     if (ratio < 0.5) {
-      // Nog ruim binnen gemiddelde
       cls   = 'fr-sale-insight--fast';
       icon  = '🟢';
       label = `Slechts ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gemiddelde verkooptijd in deze buurt is ${avgFmt}.`;
     } else if (ratio < 1.0) {
-      // Nadert het gemiddelde
       cls   = 'fr-sale-insight--approaching';
       icon  = '🟡';
       label = `${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — nadert de gemiddelde verkooptijd van ${avgFmt} in deze buurt.`;
     } else if (ratio === 1.0) {
-      // Is het gemiddelde
       cls   = 'fr-sale-insight--approaching';
       icon  = '🟡';
       label = `${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gemiddelde verkooptijd in deze buurt is ${avgFmt}. Precies het gemiddelde.`;
     } else if (ratio < 1.5) {
-      // Licht boven het gemiddelde
       cls   = 'fr-sale-insight--slow';
       icon  = '🟠';
       label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gemiddelde verkooptijd in deze buurt is ${avgFmt}. Staat al langer dan gemiddeld te koop.`;
     } else {
-      // Significant boven het gemiddelde
       cls   = 'fr-sale-insight--very-slow';
       icon  = '🔴';
       label = `Al ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gemiddelde verkooptijd in deze buurt is ${avgFmt}. Flink langer dan gemiddeld — misschien onderhandelingsruimte?`;
