@@ -655,6 +655,24 @@
 
 .fr-woz-info:hover::after { opacity: 1; }
 
+/* ---- Prijs per m² vergelijking balk ---- */
+.fr-price-comparison {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 9px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--fr-border);
+}
+
+.fr-price-comparison__icon { flex-shrink: 0; font-size: 14px; line-height: 1.4; }
+.fr-price-comparison__text { color: var(--fr-text); }
+
+.fr-price-comparison--neutral { background: var(--fr-bg-alt); color: var(--fr-text-muted); }
+.fr-price-comparison--cheaper { background: #e6f4ec; border-color: #b8dfc8; }
+.fr-price-comparison--pricier { background: #fef3ec; border-color: #f0d4b8; }
+
 /* ---- Street sale insight ---- */
 .fr-sale-insight {
   display: flex;

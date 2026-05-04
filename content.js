@@ -387,23 +387,23 @@
       if (ratio <= 0.5) {
         cls   = 'fr-sale-insight--fast';
         icon  = '🟢';
-        label = `Snel verkocht in ${looptijdFmt} — buurtgemiddelde is ${avgFmt}.`;
+        label = `Snel verkocht in ${looptijdFmt} — buurtgemiddelde is ${avgFmt}`;
       } else if (ratio < 1.0) {
         cls   = 'fr-sale-insight--fast';
         icon  = '🟢';
-        label = `Verkocht in ${looptijdFmt} — sneller dan het buurtgemiddelde van ${avgFmt}.`;
+        label = `Verkocht in ${looptijdFmt} — sneller dan het buurtgemiddelde van ${avgFmt}`;
       } else if (ratio < 1.2) {
         cls   = 'fr-sale-insight--approaching';
         icon  = '🟡';
-        label = `Verkocht in ${looptijdFmt} — vrijwel conform het buurtgemiddelde van ${avgFmt}.`;
+        label = `Verkocht in ${looptijdFmt} — vrijwel conform het buurtgemiddelde van ${avgFmt}`;
       } else if (ratio < 2.0) {
         cls   = 'fr-sale-insight--slow';
         icon  = '🟠';
-        label = `Verkocht in ${looptijdFmt} — langer dan het buurtgemiddelde van ${avgFmt}.`;
+        label = `Verkocht in ${looptijdFmt} — langer dan het buurtgemiddelde van ${avgFmt}`;
       } else {
         cls   = 'fr-sale-insight--very-slow';
         icon  = '🔴';
-        label = `Verkocht in ${looptijdFmt} — flink langer dan het buurtgemiddelde van ${avgFmt}.`;
+        label = `Verkocht in ${looptijdFmt} — flink langer dan het buurtgemiddelde van ${avgFmt}`;
       }
 
       return `<div class="fr-sale-insight ${cls}">
@@ -667,11 +667,25 @@
       insights.push({icon: "🛏️", text: rooms});
     }
 
-    const energyLabel = findDd("energielabel");
-    if (energyLabel && energyLabel.length <= 5) insights.push({ icon: "⚡", text: energyLabel });
-
     const buildYear = findDd("bouwjaar");
     if (buildYear && /^\d{4}$/.test(buildYear)) insights.push({ icon: "🏗️", text: buildYear });
+
+    const badkamersRaw = findDd('aantal badkamers');
+    if (badkamersRaw) {
+      const m = badkamersRaw.match(/(\d+)/);
+      const n = m ? parseInt(m[1], 10) : 0;
+      if (n >= 1) {
+        const voorzieningen = (findDd('badkamervoorzieningen') || '').toLowerCase();
+        const heeftLigbad = voorzieningen.includes('ligbad');
+        let icon;
+        if (heeftLigbad) {
+          icon = n >= 2 ? '🛁🚿' : '🛁';
+        } else {
+          icon = n >= 2 ? '🚿🚿' : '🚿';
+        }
+        insights.push({ icon, text: `${n} badkamer${n !== 1 ? 's' : ''}` });
+      }
+    }
 
     const areaStr = findDd("wonen", "woonoppervlakte", "gebruiksoppervlakte wonen");
     let livingArea = null;
@@ -717,6 +731,28 @@
       insights.push({ icon: '🏢', text: `VvE ${servicekostenBedrag}/mnd` });
     }
 
+    // Garage: zoek via de #category-garage sectie
+    const garageSection = document.querySelector('#category-garage');
+    if (garageSection) {
+      const soortDd = [...garageSection.querySelectorAll('dt')]
+        .find(dt => (dt.textContent || '').trim().toLowerCase() === 'soort garage')
+        ?.nextElementSibling;
+      const capaciteitDd = [...garageSection.querySelectorAll('dt')]
+        .find(dt => (dt.textContent || '').trim().toLowerCase() === 'capaciteit')
+        ?.nextElementSibling;
+      const soort = (soortDd?.textContent || '').trim().toLowerCase();
+      const cap = (capaciteitDd?.textContent || '').trim().toLowerCase();
+      const aantalAutos = cap.match(/(\d+)\s*auto/);
+      const n = aantalAutos ? parseInt(aantalAutos[1], 10) : null;
+      // Toon alleen als het een echte garage is (niet alleen een parkeerplek)
+      if (soort && !soort.includes('parkeerplaats') && !soort.includes('carport')) {
+        const label = n && n > 1 ? `Garage (${n} auto's)` : 'Garage';
+        insights.push({ icon: n && n > 1 ? '🚗🚗' : '🚗', text: 'Garage' });
+      } else if (soort.includes('carport')) {
+        insights.push({ icon: '🚗', text: 'Carport' });
+      }
+    }
+
     // Veranda / overkapping: zoek in de volledige paginatekst
     const allPageText = (document.body.innerText || '').toLowerCase();
     if (allPageText.includes('veranda') || allPageText.includes('overkapping')) {
@@ -753,6 +789,9 @@
       }
       if (aantalPanelen === null && /zonnepanelen/i.test(bodyText)) aantalPanelen = 0;
       if (aantalPanelen !== null) {
+        if (aantalPanelen < 4) {
+          aantalPanelen = 0;
+        }
         const label = aantalPanelen > 0 ? `${aantalPanelen} panelen` : 'Zonnepanelen';
         insights.push({
           icon: '☀️',
@@ -1059,10 +1098,10 @@
         </div>
 
         <div class="fr-insights">
-          ${insights.map((i) => `<span class="fr-insight-chip"><span class="fr-insight-chip__icon">${i.svg ? i.svg : i.icon}</span>${i.text}</span>`).join("")}
-          ${priceComparisonChip}
+          ${insights.map((i) => `<span class="fr-insight-chip"${i.chipStyle ? ` style="${i.chipStyle}"` : ''}><span class="fr-insight-chip__icon">${i.svg ? i.svg : i.icon}</span>${i.text}</span>`).join("")}
         </div>
 
+        ${priceComparisonChip}
         ${priceChangeBanner}
         ${streetSaleInsightHtml}
         ${wozChartHtml}
@@ -1109,8 +1148,9 @@
   }
 
   /**
-   * Rendert een insight-chip die aangeeft of de prijs per m² hoger of lager is
+   * Rendert een balk die aangeeft of de prijs per m² hoger of lager is
    * dan andere woningen in de straat / wijk / stad.
+   * Stijl analoog aan fr-sale-insight.
    *
    * @param {{ scope, pct_diff, own_price_per_m2, avg_price_per_m2, count } | null} comparison
    */
@@ -1118,7 +1158,6 @@
     if (!comparison || comparison.scope === null || comparison.pct_diff === null) return "";
 
     const pct     = parseFloat(comparison.pct_diff);
-    const count   = comparison.count;
     const scope   = comparison.scope;
 
     const scopeLabels = { street: 'straatgemiddelde', neighborhood: 'wijkgemiddelde', city: 'stadgemiddelde' };
@@ -1127,22 +1166,29 @@
     const absPct  = Math.abs(pct).toFixed(1).replace('.', ',');
     const cheaper = pct < 0;
 
-    // Drempelwaarde: toon niets als het verschil < 1%
-    if (Math.abs(pct) < 1) {
-      return `<span class="fr-insight-chip fr-insight-chip--neutral" title="${count} woning${count !== 1 ? 'en' : ''} vergeleken ${scopeLabel}">prijs/m² conform ${scopeLabel}</span>`;
-    }
-
-    const cls   = cheaper ? 'fr-insight-chip--cheaper' : 'fr-insight-chip--pricier';
-    const icon  = cheaper ? '↓' : '↑';
-    const label = cheaper
-      ? `${icon} ${absPct}% goedkoper/m² dan ${scopeLabel}`
-      : `${icon} ${absPct}% duurder/m² dan ${scopeLabel}`;
-
     const avgFmt = comparison.avg_price_per_m2
-      ? `Gem. €\u00a0${Number(comparison.avg_price_per_m2).toLocaleString('nl-NL')}/m² (${count} woning${count !== 1 ? 'en' : ''})`
+      ? `van €\u00a0${Number(comparison.avg_price_per_m2).toLocaleString('nl-NL')}/m²`
       : '';
 
-    return `<span class="fr-insight-chip ${cls}" title="${escapeAttr(avgFmt)}">${escapeHtml(label)}</span>`;
+    // Drempelwaarde: toon niets als het verschil < 1%
+    if (Math.abs(pct) < 1) {
+      return `<div class="fr-price-comparison fr-price-comparison--neutral">
+        <span class="fr-price-comparison__icon">📋</span>
+        <span class="fr-price-comparison__text">Prijs per m² is conform het ${escapeHtml(scopeLabel)}${avgFmt ? ` ${escapeHtml(avgFmt)}` : ''}</span>
+      </div>`;
+    }
+
+    const cls  = cheaper ? 'fr-price-comparison--cheaper' : 'fr-price-comparison--pricier';
+    const icon = cheaper ? '↓' : '↑';
+    const label = cheaper
+      ? `${absPct}% goedkoper per m² dan het ${scopeLabel}`
+      : `${absPct}% duurder per m² dan het ${scopeLabel}`;
+    const detail = avgFmt ? ` ${avgFmt}` : '';
+
+    return `<div class="fr-price-comparison ${cls}">
+      <span class="fr-price-comparison__icon">${icon}</span>
+      <span class="fr-price-comparison__text">${escapeHtml(label)}${escapeHtml(detail)}</span>
+    </div>`;
   }
 
   /**
@@ -1615,7 +1661,7 @@
   function buildSkeletonPlaceholder() {
     const insights = generateInsights();
     const insightsHtml = insights.length > 0
-      ? `<div class="fr-insights">${insights.map((i) => `<span class="fr-insight-chip"><span class="fr-insight-chip__icon">${i.svg ? i.svg : i.icon}</span>${i.text}</span>`).join("")}</div>`
+      ? `<div class="fr-insights">${insights.map((i) => `<span class="fr-insight-chip"${i.chipStyle ? ` style="${i.chipStyle}"` : ''}><span class="fr-insight-chip__icon">${i.svg ? i.svg : i.icon}</span>${i.text}</span>`).join("")}</div>`
       : "";
 
     const el = document.createElement("div");
@@ -1655,6 +1701,39 @@
     return el;
   }
 
+  function colorEnergyLabelChip() {
+    const EL_COLORS = {
+      'A++++': { bg: '#1a7c3e', color: '#fff' },
+      'A+++':  { bg: '#1a7c3e', color: '#fff' },
+      'A++':   { bg: '#22a04a', color: '#fff' },
+      'A+':    { bg: '#4db848', color: '#fff' },
+      'A':     { bg: '#79c142', color: '#fff' },
+      'B':     { bg: '#c3d52a', color: '#2c2416' },
+      'C':     { bg: '#f0e60a', color: '#2c2416' },
+      'D':     { bg: '#f7b615', color: '#2c2416' },
+      'E':     { bg: '#f07d16', color: '#fff' },
+      'F':     { bg: '#e0401b', color: '#fff' },
+      'G':     { bg: '#bc1219', color: '#fff' },
+    };
+    // Zoek de <li> waarvan een <span> de tekst "energielabel" bevat
+    for (const span of document.querySelectorAll('li span')) {
+      if ((span.textContent || '').trim().toLowerCase() === 'energielabel') {
+        const li = span.closest('li');
+        if (!li) continue;
+        // Het label staat in de eerste <span class="md:font-bold"> (of gewoon de eerste span)
+        const labelSpan = li.querySelector('span.md\\:font-bold') || li.querySelector('span');
+        if (!labelSpan) continue;
+        const label = (labelSpan.textContent || '').trim().toUpperCase();
+        const style = EL_COLORS[label];
+        if (!style) continue;
+        const svg = li.querySelector('svg');
+        if (svg) svg.style.color = style.bg;
+        dbg('Energielabel icoon gekleurd:', label, style.bg);
+        break;
+      }
+    }
+  }
+
   async function inject() {
     if (!isDetailPage()) return;
     if (document.getElementById("funda-reacties-root")) return;
@@ -1690,6 +1769,7 @@
       await watchLoginState(panel);
       const propertyId = getPropertyId();
       if (/^\d{6,}$/.test(propertyId)) trackPropertyView(propertyId);
+      colorEnergyLabelChip();
       chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: commentCount });
       dbg("✅ Panel fully rendered");
     } catch (error) {

@@ -209,7 +209,7 @@ Bij elke wijziging:
 
 ```bash
 cd /Users/eddy/sandboxes
-zip -r funda-inzicht-1.6.0.zip funda-reacties/ \
+zip -r funda-inzicht-1.6.1.zip funda-reacties/ \
   --exclude "funda-reacties/.git/*" \
   --exclude "funda-reacties/.idea/*" \
   --exclude "funda-reacties/docs/*" \
