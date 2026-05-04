@@ -679,9 +679,9 @@
         const heeftLigbad = voorzieningen.includes('ligbad');
         let icon;
         if (heeftLigbad) {
-          icon = n >= 2 ? '🛁🚿' : '🛁';
+          icon = n >= 2 ? '🛁 🚿' : '🛁';
         } else {
-          icon = n >= 2 ? '🚿🚿' : '🚿';
+          icon = n >= 2 ? '🚿 🚿' : '🚿';
         }
         insights.push({ icon, text: `${n} badkamer${n !== 1 ? 's' : ''}` });
       }
@@ -747,7 +747,7 @@
       // Toon alleen als het een echte garage is (niet alleen een parkeerplek)
       if (soort && !soort.includes('parkeerplaats') && !soort.includes('carport')) {
         const label = n && n > 1 ? `Garage (${n} auto's)` : 'Garage';
-        insights.push({ icon: n && n > 1 ? '🚗🚗' : '🚗', text: 'Garage' });
+        insights.push({ icon: n && n > 1 ? '🚗 🚗' : '🚗', text: 'Garage' });
       } else if (soort.includes('carport')) {
         insights.push({ icon: '🚗', text: 'Carport' });
       }
@@ -1158,6 +1158,7 @@
     if (!comparison || comparison.scope === null || comparison.pct_diff === null) return "";
 
     const pct     = parseFloat(comparison.pct_diff);
+    const count   = comparison.count;
     const scope   = comparison.scope;
 
     const scopeLabels = { street: 'straatgemiddelde', neighborhood: 'wijkgemiddelde', city: 'stadgemiddelde' };
@@ -1165,6 +1166,10 @@
 
     const absPct  = Math.abs(pct).toFixed(1).replace('.', ',');
     const cheaper = pct < 0;
+
+    // Alle scopes vereisen minimaal 3 woningen voor een betrouwbaar gemiddelde
+    const MIN_COUNT = { street: 3, neighborhood: 3, city: 3 };
+    if (count < (MIN_COUNT[scope] ?? 3)) return '';
 
     const avgFmt = comparison.avg_price_per_m2
       ? `van €\u00a0${Number(comparison.avg_price_per_m2).toLocaleString('nl-NL')}/m²`

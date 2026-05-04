@@ -131,6 +131,7 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 - [ ] Favorieten-monitoring — notificatie als er een reactie komt op je favoriet
 - [ ] Achtergrondjob die periodiek wijzigingen in vraagprijzen checkt voor favorieten van gebruikers
 - [ ] De mogelijkheid bieden om de huizen met de meeste 😍of 🏚️ te bekijken (per stad/hele land)
+- [ ] Het wijkgemiddelde moet eigen van de wijk-pagina komen, waar we nu ook de gemiddelde verkooptijd vandaan halen
 
 ---
 
