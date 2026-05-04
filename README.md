@@ -132,7 +132,6 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 - [ ] Achtergrondjob die periodiek wijzigingen in vraagprijzen checkt voor favorieten van gebruikers
 - [ ] De mogelijkheid bieden om de huizen met de meeste 😍of 🏚️ te bekijken (per stad/hele land)
 - [ ] Dark mode
-- [ ] 'Aantal dagen online' insight niet relevant voor verkochte woningen
 
 ---
 
