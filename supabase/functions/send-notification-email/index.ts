@@ -53,13 +53,13 @@ function buildHtml(n: EmailNotification): string {
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
     <body style="font-family:sans-serif;color:#333;max-width:600px;margin:0 auto;padding:20px">
-      <h2 style="color:#e86c2a;border-bottom:2px solid #e86c2a;padding-bottom:8px">Funda Reacties</h2>
+      <h2 style="color:#e86c2a;border-bottom:2px solid #e86c2a;padding-bottom:8px">Funda Inzicht</h2>
       <p>Hallo Eddy,</p>
       <p>Er is een nieuwe reactie op <strong>${address}</strong>:</p>
       ${reaction}
       <p><a href="${url}" style="display:inline-block;background:#e86c2a;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">Bekijk op Funda &rarr;</a></p>
       <p style="font-size:12px;color:#999;margin-top:24px;border-top:1px solid #eee;padding-top:12px;">
-        Monitor-notificatie van Funda Reacties
+        Monitor-notificatie van Funda Inzicht
       </p>
     </body></html>`;
 }
@@ -77,7 +77,7 @@ async function sendEmail(n: EmailNotification) {
     },
     body: JSON.stringify({
       personalizations: [{ to: [{ email: OWNER_EMAIL }], subject }],
-      from: { email: "eddyverbruggen@gmail.com", name: "Funda Reacties" },
+      from: { email: "eddyverbruggen@gmail.com", name: "Funda Inzicht" },
       content: [{ type: "text/html", value: buildHtml(n) }],
     }),
   });

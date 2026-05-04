@@ -1,5 +1,5 @@
 -- ============================================================================
--- Funda Reacties — Debug Email Flow
+-- Funda Inzicht — Debug Email Flow
 -- Voer elke stap apart uit in Supabase SQL Editor
 -- ============================================================================
 

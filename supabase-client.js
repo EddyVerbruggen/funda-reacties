@@ -1,12 +1,12 @@
 // ==========================================================================
-// Funda Reacties — Supabase Client
+// Funda Inzicht — Supabase Client
 // ==========================================================================
 
 const SUPABASE_URL = 'https://xjniqvdfwnsvsuuteakt.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqbmlxdmRmd25zdnN1dXRlYWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NDgxNjIsImV4cCI6MjA5MzAyNDE2Mn0.Dr-t4SIBaZMYu2nn1553S1VzaSCm2bcnxCcAzue_xKo';
 
 const DEBUG = false;
-function dbg(...args) { if (DEBUG) console.log('[Funda Reacties]', ...args); }
+function dbg(...args) { if (DEBUG) console.log('[Funda Inzicht]', ...args); }
 
 const { createClient } = supabase;
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -46,13 +46,13 @@ function detectFundaEmailFromPage() {
       if (emailMatch) {
         // Controleer of dit een Funda-context script is (bevat ook access_token of hashedEmail)
         if (src.includes('hashedEmail') || src.includes('access_token') || src.includes('hashedId')) {
-          console.log('[Funda Reacties] Email gevonden in paginabron:', emailMatch[1]);
+          console.log('[Funda Inzicht] Email gevonden in paginabron:', emailMatch[1]);
           return emailMatch[1];
         }
       }
     }
   } catch (e) {
-    console.warn('[Funda Reacties] Fout bij lezen paginabron:', e);
+    console.warn('[Funda Inzicht] Fout bij lezen paginabron:', e);
   }
   return null;
 }
@@ -84,11 +84,11 @@ async function detectFundaAccountFromFetch() {
     const email = emailMatch ? emailMatch[1] : null;
 
     if (email) {
-      console.log('[Funda Reacties] Account via fetch:', { name, email });
+      console.log('[Funda Inzicht] Account via fetch:', { name, email });
       return { name, email };
     }
   } catch (e) {
-    console.warn('[Funda Reacties] Fetch /account/ mislukt:', e);
+    console.warn('[Funda Inzicht] Fetch /account/ mislukt:', e);
   }
   return null;
 }
@@ -158,7 +158,7 @@ async function getUserProfile() {
       if (!userId) {
         userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         source = 'anonymous-new';
-        console.log('[Funda Reacties] Nieuw anoniem userId:', userId);
+        console.log('[Funda Inzicht] Nieuw anoniem userId:', userId);
       }
 
       if (!displayName) displayName = generateDefaultName();
@@ -170,7 +170,7 @@ async function getUserProfile() {
       _profileCache   = profile;
       _profilePromise = null;
 
-      console.log('[Funda Reacties] Profiel (lokaal):', profile);
+      console.log('[Funda Inzicht] Profiel (lokaal):', profile);
       resolve(profile);
     });
   });
@@ -230,10 +230,10 @@ async function recordPriceIfChanged(propertyId, price, pricePerM2) {
       p_price:        price        ?? null,
       p_price_per_m2: pricePerM2   ?? null,
     });
-    if (error) { console.error('[Funda Reacties] recordPriceIfChanged fout:', error); return { inserted: false, previousPrice: null }; }
+    if (error) { console.error('[Funda Inzicht] recordPriceIfChanged fout:', error); return { inserted: false, previousPrice: null }; }
     return { inserted: data.inserted, previousPrice: data.previous_price ?? null };
   } catch (e) {
-    console.error('[Funda Reacties] recordPriceIfChanged exception:', e);
+    console.error('[Funda Inzicht] recordPriceIfChanged exception:', e);
     return { inserted: false, previousPrice: null };
   }
 }
@@ -255,10 +255,10 @@ async function getLastKnownPrice(propertyId) {
       .select('price, price_per_m2, recorded_at')
       .eq('property_id', propertyId)
       .order('recorded_at', { ascending: false });
-    if (error) { console.error('[Funda Reacties] getLastKnownPrice fout:', error); return []; }
+    if (error) { console.error('[Funda Inzicht] getLastKnownPrice fout:', error); return []; }
     return data || [];
   } catch (e) {
-    console.error('[Funda Reacties] getLastKnownPrice exception:', e);
+    console.error('[Funda Inzicht] getLastKnownPrice exception:', e);
     return [];
   }
 }
@@ -308,11 +308,11 @@ async function getPricePerM2Comparison(propertyId) {
     const { data, error } = await supabaseClient.rpc('get_price_per_m2_comparison', {
       p_property_id: propertyId,
     });
-    if (error) { console.error('[Funda Reacties] getPricePerM2Comparison fout:', error); return null; }
+    if (error) { console.error('[Funda Inzicht] getPricePerM2Comparison fout:', error); return null; }
     if (!data || data.scope === null) return null;
     return data;
   } catch (e) {
-    console.error('[Funda Reacties] getPricePerM2Comparison exception:', e);
+    console.error('[Funda Inzicht] getPricePerM2Comparison exception:', e);
     return null;
   }
 }
@@ -488,24 +488,24 @@ async function getNeighborhoodComments(currentPropertyId, location, limitPerScop
 }
 
 function subscribeToPropertyUpdates(propertyId, userId, onNewComment) {
-  console.log('[Funda Reacties] Subscribing to realtime, property:', propertyId, 'userId:', userId);
+  console.log('[Funda Inzicht] Subscribing to realtime, property:', propertyId, 'userId:', userId);
   const channel = supabaseClient
     .channel('comments-inserts-' + Date.now())
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, async (payload) => {
       const c = payload.new;
-      console.log('[Funda Reacties] Realtime INSERT — property:', c.property_id, 'expected:', propertyId, 'author:', c.user_id, 'me:', userId);
+      console.log('[Funda Inzicht] Realtime INSERT — property:', c.property_id, 'expected:', propertyId, 'author:', c.user_id, 'me:', userId);
       if (c.property_id !== propertyId) return;
-      if (c.user_id === userId) { console.log('[Funda Reacties] Own comment, ignoring'); return; }
+      if (c.user_id === userId) { console.log('[Funda Inzicht] Own comment, ignoring'); return; }
 
       const { data: userComments } = await supabaseClient.from('comments').select('id').eq('property_id', propertyId).eq('user_id', userId).limit(1);
       const { data: userEmojis }   = await supabaseClient.from('emoji_reactions').select('id').eq('property_id', propertyId).eq('user_id', userId).limit(1);
       const hasReacted = (userComments?.length > 0) || (userEmojis?.length > 0);
-      console.log('[Funda Reacties] hasReacted:', hasReacted);
+      console.log('[Funda Inzicht] hasReacted:', hasReacted);
       if (hasReacted) onNewComment(c);
     })
     .subscribe((status, err) => {
-      console.log('[Funda Reacties] Realtime status:', status);
-      if (err) console.error('[Funda Reacties] Realtime error:', err);
+      console.log('[Funda Inzicht] Realtime status:', status);
+      if (err) console.error('[Funda Inzicht] Realtime error:', err);
     });
   return channel;
 }
@@ -553,7 +553,7 @@ async function getCachedWozData(propertyId) {
       vastgesteldeWaarde: r.woz_waarde,
     }));
   } catch (e) {
-    console.error('[Funda Reacties] getCachedWozData exception:', e);
+    console.error('[Funda Inzicht] getCachedWozData exception:', e);
     return null;
   }
 }
@@ -579,14 +579,14 @@ async function saveWozData(propertyId, wozData) {
       p_property_id: propertyId,
       p_woz_data:    payload,
     });
-    if (error) { console.error('[Funda Reacties] saveWozData fout:', error); return null; }
+    if (error) { console.error('[Funda Inzicht] saveWozData fout:', error); return null; }
     // RPC geeft terug: [{ peiljaar, woz_waarde }]
     return (data || []).map(r => ({
       peildatum: `${r.peiljaar}-01-01`,
       vastgesteldeWaarde: r.woz_waarde,
     }));
   } catch (e) {
-    console.error('[Funda Reacties] saveWozData exception:', e);
+    console.error('[Funda Inzicht] saveWozData exception:', e);
     return null;
   }
 }
@@ -606,11 +606,11 @@ async function getCityWozGrowth(city, years = 8) {
       p_city:  city,
       p_years: years,
     });
-    if (error) { console.error('[Funda Reacties] getCityWozGrowth fout:', error); return null; }
+    if (error) { console.error('[Funda Inzicht] getCityWozGrowth fout:', error); return null; }
     if (!data || data.cagr_pct === null) return null;
     return data;
   } catch (e) {
-    console.error('[Funda Reacties] getCityWozGrowth exception:', e);
+    console.error('[Funda Inzicht] getCityWozGrowth exception:', e);
     return null;
   }
 }
@@ -629,10 +629,10 @@ async function getCityWozStats(city, years = 5) {
       p_city:  city,
       p_years: years,
     });
-    if (error) { console.error('[Funda Reacties] getCityWozStats fout:', error); return null; }
+    if (error) { console.error('[Funda Inzicht] getCityWozStats fout:', error); return null; }
     return data || null;
   } catch (e) {
-    console.error('[Funda Reacties] getCityWozStats exception:', e);
+    console.error('[Funda Inzicht] getCityWozStats exception:', e);
     return null;
   }
 }
@@ -654,7 +654,7 @@ async function getMostActiveViewedProperties(propertyIds, limit = 3) {
       .in('property_id', propertyIds)
       .order('created_at', { ascending: false })
       .limit(200);  // ruim ophalen, dan client-side aggregeren
-    if (error) { console.error('[Funda Reacties] getMostActiveViewedProperties fout:', error); return null; }
+    if (error) { console.error('[Funda Inzicht] getMostActiveViewedProperties fout:', error); return null; }
     if (!data || data.length === 0) return null;
 
     // Aggregeer per property_id: tel comments en onthoud meest recente
@@ -676,7 +676,7 @@ async function getMostActiveViewedProperties(propertyIds, limit = 3) {
       .sort((a, b) => b.comment_count - a.comment_count || b.latest_comment_at.localeCompare(a.latest_comment_at))
       .slice(0, limit);
   } catch (e) {
-    console.error('[Funda Reacties] getMostActiveViewedProperties exception:', e);
+    console.error('[Funda Inzicht] getMostActiveViewedProperties exception:', e);
     return null;
   }
 }
@@ -739,12 +739,12 @@ async function getStreetSaleStats(city, streetSlug) {
       p_neighborhood: streetSlug,
       p_sale_days:    saleDays,
     });
-    if (saveErr) console.error('[Funda Reacties] upsert_street_sale_stats fout:', saveErr);
+    if (saveErr) console.error('[Funda Inzicht] upsert_street_sale_stats fout:', saveErr);
 
     const lastFetchedAt = saved?.[0]?.last_fetched_at || new Date().toISOString();
     return { avgSaleDays: saleDays, lastFetchedAt };
   } catch (e) {
-    console.error('[Funda Reacties] getStreetSaleStats exception:', e);
+    console.error('[Funda Inzicht] getStreetSaleStats exception:', e);
     return { avgSaleDays: null, lastFetchedAt: null };
   }
 }
@@ -766,7 +766,7 @@ async function getStreetSaleStats(city, streetSlug) {
 async function migrateAnonymousData(anonId, fundaId, displayName) {
   if (!anonId || !fundaId || anonId === fundaId) return;
 
-  console.log('[Funda Reacties] Migratie start:', anonId, '→', fundaId);
+  console.log('[Funda Inzicht] Migratie start:', anonId, '→', fundaId);
 
   try {
     const { data, error } = await supabaseClient.rpc('migrate_anonymous_comments', {
@@ -776,14 +776,14 @@ async function migrateAnonymousData(anonId, fundaId, displayName) {
     });
 
     if (error) {
-      console.error('[Funda Reacties] Migratie mislukt:', error);
+      console.error('[Funda Inzicht] Migratie mislukt:', error);
       return;
     }
 
-    console.log('[Funda Reacties] Migratie resultaat:', data);
+    console.log('[Funda Inzicht] Migratie resultaat:', data);
     chrome.storage.local.remove('previousUserId');
   } catch (e) {
-    console.error('[Funda Reacties] Migratie exception:', e);
+    console.error('[Funda Inzicht] Migratie exception:', e);
   }
 }
 

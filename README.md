@@ -1,8 +1,8 @@
-# 🏠💬 Funda Reacties
+# 🔍 Funda Inzicht
 
-**Reageer op woningen op Funda.nl** — lees en deel ervaringen met andere huizenzoekers.
+**Dieper inzicht in woningen op Funda.nl** — WOZ-ontwikkeling, prijshistorie, buurtreacties en community-ervaringen op elke woningpagina.
 
-Een Chrome-extensie die een reactiepaneel toevoegt aan woningpagina's op Funda.nl. Denk aan een combinatie van Reddit-achtige comments en snelle emoji-reacties, direct op de pagina van het huis dat je bekijkt.
+Een Chrome-extensie die een inzichten- en reactiepaneel toevoegt aan woningpagina's op Funda.nl.
 
 ---
 
@@ -108,7 +108,7 @@ funda-reacties/
 
 ## Architectuur
 
-### v0.5.0 — Multi-user met Supabase (current)
+### v1.6.2 — Funda Inzicht (current)
 
 Data wordt opgeslagen in een Supabase PostgreSQL database:
 
@@ -129,8 +129,10 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 - [ ] Aggregatie niveau "provincie" gebruiken?
 - [ ] Moderatie (rapporteer-knop, automatische spam-detectie)
 - [ ] Favorieten-monitoring — notificatie als er een reactie komt op je favoriet
-- [ ] Dark mode
+- [ ] Achtergrondjob die periodiek wijzigingen in vraagprijzen checkt voor favorieten van gebruikers
 - [ ] De mogelijkheid bieden om de huizen met de meeste 😍of 🏚️ te bekijken (per stad/hele land)
+- [ ] Dark mode
+- [ ] 'Aantal dagen online' insight niet relevant voor verkochte woningen
 
 ---
 
@@ -145,7 +147,7 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 ### Geen reacties zichtbaar
 
 - Open de browser console (F12) op een Funda pagina
-- Kijk naar error messages met `[Funda Reacties]` prefix
+- Kijk naar error messages met `[Funda Inzicht]` prefix
 - Check of Supabase credentials correct zijn ingevuld in `supabase-client.js`
 - Verifieer dat het database schema correct is uitgevoerd (zie Supabase > SQL Editor > Query History)
 
@@ -181,8 +183,8 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 
 ```bash
 # Clone de repository
-git clone https://github.com/jouw-username/funda-reacties.git
-cd funda-reacties
+git clone https://github.com/jouw-username/funda-lens.git
+cd funda-lens
 
 # Open in VS Code
 code .
@@ -209,7 +211,7 @@ Bij elke wijziging:
 
 ```bash
 cd /Users/eddy/sandboxes
-zip -r funda-reacties-1.5.4.zip funda-reacties/ \
+zip -r funda-inzicht-1.6.2.zip funda-reacties/ \
   --exclude "funda-reacties/.git/*" \
   --exclude "funda-reacties/.idea/*" \
   --exclude "funda-reacties/docs/*" \
@@ -221,7 +223,7 @@ zip -r funda-reacties-1.5.4.zip funda-reacties/ \
 ```
 
 ### Beschrijving voor de Chrome Web Store (pas aan bij nieuwe features)
-Funda Reacties voegt een reactiepaneel toe aan elke woningpagina op Funda.nl, zodat huizenzoekers ervaringen kunnen delen over bezichtigingen, de buurt, de makelaar of de vraagprijs.
+Funda Inzicht voegt een inzichten- en reactiepaneel toe aan elke woningpagina op Funda.nl.
 
 Wat kun je doen?
 

@@ -1,5 +1,5 @@
 // ==========================================================================
-// Funda Reacties — Content Script (Supabase Edition)
+// Funda Inzicht — Content Script (Supabase Edition)
 // ==========================================================================
 
 (function () {
@@ -203,7 +203,7 @@
   }
 
   const DEBUG = true;
-  function dbg(...args) { if (DEBUG) console.log("[Funda Reacties]", ...args); }
+  function dbg(...args) { if (DEBUG) console.log("[Funda Inzicht]", ...args); }
 
   // Verwijder HTML-tags en URLs stille zodat comments altijd plain text zijn.
   // Gebruikers merken dit alleen als ze echt HTML of links probeerden in te voeren.
@@ -901,8 +901,7 @@
       <div class="fr-container">
         <div class="fr-header">
           <h3 class="fr-header__title">
-            <span class="fr-header__icon">💬</span>
-            Reacties
+            <span class="fr-header__icon">🔍</span>Inzicht
           </h3>
           <span class="fr-header__count">${data.comments.length} reactie${data.comments.length !== 1 ? "s" : ""}</span>
         </div>
@@ -966,7 +965,7 @@
 
         ${renderWhispers(enrichWhisperDataWithWoz(getPropertyDataForWhisper(), wozData))}
 
-        <div class="fr-footer">Funda Reacties - voor en door de community</div>
+        <div class="fr-footer">Funda Inzicht - voor en door de community</div>
       </div>
     `;
 
@@ -1349,7 +1348,7 @@
       try {
         chrome.runtime.sendMessage({
           type: "SHOW_NOTIFICATION",
-          title: `💬 Nieuwe reactie op ${getPropertyAddress() || "een woning"}`,
+          title: `🔍 Nieuwe reactie op ${getPropertyAddress() || "een woning"}`,
           message: `${newComment.name}: ${newComment.text.substring(0, 80)}${newComment.text.length > 80 ? "…" : ""}`,
           propertyUrl: getPropertyUrl(),
         });
@@ -1488,7 +1487,7 @@
     el.innerHTML = `
       <div class="fr-container">
         <div class="fr-header">
-          <h3 class="fr-header__title"><span class="fr-header__icon">💬</span>Reacties</h3>
+          <h3 class="fr-header__title"><span class="fr-header__icon">🔍</span>Inzicht</h3>
           <span class="fr-header__count fr-header__count--loading">laden…</span>
         </div>
         <div class="fr-quick-reactions">
@@ -1515,7 +1514,7 @@
           <li class="fr-skeleton"><div class="fr-skeleton__line" style="width:40%"></div><div class="fr-skeleton__line" style="width:90%"></div><div class="fr-skeleton__line" style="width:65%"></div></li>
           <li class="fr-skeleton"><div class="fr-skeleton__line" style="width:35%"></div><div class="fr-skeleton__line" style="width:80%"></div><div class="fr-skeleton__line" style="width:50%"></div></li>
         </ul>
-        <div class="fr-footer">Funda Reacties - voor en door de community</div>
+        <div class="fr-footer">Funda Inzicht - voor en door de community</div>
       </div>`;
     return el;
   }
@@ -1558,7 +1557,7 @@
       chrome.runtime.sendMessage({ type: "UPDATE_BADGE", count: commentCount });
       dbg("✅ Panel fully rendered");
     } catch (error) {
-      console.error("[Funda Reacties] Error rendering panel:", error);
+      console.error("[Funda Inzicht] Error rendering panel:", error);
       const header = placeholder.querySelector(".fr-header__count");
       if (header) header.textContent = "fout";
       const commentsList = placeholder.querySelector(".fr-comments");
@@ -1583,10 +1582,10 @@
     currentUserId      = profile.userId;
     currentDisplayName = profile.displayName;
 
-    console.log('[Funda Reacties] applyProfileToPanel:', { previousUserId, newUserId: profile.userId });
+    console.log('[Funda Inzicht] applyProfileToPanel:', { previousUserId, newUserId: profile.userId });
 
     if (previousUserId && previousUserId !== profile.userId) {
-      console.log('[Funda Reacties] Migratie nodig: anoniem → Funda');
+      console.log('[Funda Inzicht] Migratie nodig: anoniem → Funda');
       await migrateAnonymousData(previousUserId, profile.userId, profile.displayName);
       const propertyId = getPropertyId();
       const freshData = await loadReactions(propertyId);
