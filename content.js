@@ -434,7 +434,11 @@
     let icon = '⏱️';
     let label;
 
-    if (ratio < 0.5) {
+    if (daysOnline === 0) {
+      cls = 'fr-sale-insight--fast';
+      icon = '🟢';
+      label = `Sinds vandaag online — gemiddelde verkooptijd in deze buurt is ${avgFmt}.`;
+    } else if (ratio < 0.5) {
       cls   = 'fr-sale-insight--fast';
       icon  = '🟢';
       label = `Slechts ${daysOnline} dag${daysOnline !== 1 ? 'en' : ''} online — gemiddelde verkooptijd in deze buurt is ${avgFmt}.`;
@@ -676,7 +680,7 @@
       const n = m ? parseInt(m[1], 10) : 0;
       if (n >= 1) {
         const voorzieningen = (findDd('badkamervoorzieningen') || '').toLowerCase();
-        const heeftLigbad = voorzieningen.includes('ligbad');
+        const heeftLigbad = voorzieningen.includes('ligbad') || voorzieningen.includes('whirlpool');
         let icon;
         if (heeftLigbad) {
           icon = n >= 2 ? '🛁 🚿' : '🛁';
@@ -806,6 +810,12 @@
     const omschrijvingText = (omschrijvingEl ? omschrijvingEl.innerText : allPageText).toLowerCase();
     if (omschrijvingText.includes('bioscoop')) {
       insights.push({ icon: '\uD83C\uDFAC', text: 'Thuisbios' });
+    }
+    if (omschrijvingText.includes('zwembad')) {
+      insights.push({ icon: '\uD83C\uDFCA', text: 'Zwembad' });
+    }
+    if (omschrijvingText.includes('sauna')) {
+      insights.push({ icon: '\uD83E\uDDD6', text: 'Sauna' });
     }
 
     // Cv-ketel ouder dan 15 jaar: toon waarschuwings-chip
