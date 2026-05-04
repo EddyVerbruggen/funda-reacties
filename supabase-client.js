@@ -806,7 +806,7 @@ function titleCaseCity(str) {
 
 function generateWhisperTexts(propertyData) {
   const { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: rawCity, isMonument, plotArea,
-          wozWaarde, wozJaar, wozGroeiPct, vvePerMaand } = propertyData;
+          wozWaarde, wozJaar, wozGroeiPct, vvePerMaand, cvKetelBouwjaar } = propertyData;
   const city = titleCaseCity(rawCity);
   const texts = [];
 
@@ -815,7 +815,13 @@ function generateWhisperTexts(propertyData) {
     texts.push('Dit is een monumentaal pand. Verbouwingen zijn aan strenge regels gebonden — controleer of alle benodigde vergunningen aanwezig en geldig zijn voordat je een bod uitbrengt.');
   }
 
-  // ---- VvE servicekosten > €250/mnd ----
+  // ---- Cv-ketel ouder dan 15 jaar ----
+  if (cvKetelBouwjaar) {
+    const leeftijd = new Date().getFullYear() - cvKetelBouwjaar;
+    if (leeftijd >= 15) {
+      texts.push(`De cv-ketel stamt uit ${cvKetelBouwjaar} — dat is ${leeftijd} jaar oud. Ketels gaan gemiddeld 15–20 jaar mee, dus vervanging kan op korte termijn nodig zijn. Reken op €2.000–€3.500 voor een nieuwe combiketel inclusief montage.`);
+    }
+  }
   if (vvePerMaand !== null && vvePerMaand > 250) {
     const jaarlasten = Math.round(vvePerMaand * 12).toLocaleString('nl-NL');
     texts.push(`De VvE-bijdrage is €\u00a0${Math.round(vvePerMaand).toLocaleString('nl-NL')} per maand — dat is €\u00a0${jaarlasten} per jaar bovenop je hypotheeklasten. Controleer wat er precies inbegrepen is (verzekering, reservefonds, beheer) en of het reservefonds toereikend is voor toekomstig onderhoud.`);

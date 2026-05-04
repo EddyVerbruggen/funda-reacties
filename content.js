@@ -744,13 +744,7 @@
       const cap = (capaciteitDd?.textContent || '').trim().toLowerCase();
       const aantalAutos = cap.match(/(\d+)\s*auto/);
       const n = aantalAutos ? parseInt(aantalAutos[1], 10) : null;
-      // Toon alleen als het een echte garage is (niet alleen een parkeerplek)
-      if (soort && !soort.includes('parkeerplaats') && !soort.includes('carport')) {
-        const label = n && n > 1 ? `Garage (${n} auto's)` : 'Garage';
-        insights.push({ icon: n && n > 1 ? '🚗 🚗' : '🚗', text: 'Garage' });
-      } else if (soort.includes('carport')) {
-        insights.push({ icon: '🚗', text: 'Carport' });
-      }
+      insights.push({ icon: n && n > 1 ? '🚗 🚗' : '🚗', text: 'Garage' });
     }
 
     // Veranda / overkapping: zoek in de volledige paginatekst
@@ -803,6 +797,42 @@
     // Kookeiland: zoek in de volledige paginatekst
     if (allPageText.includes('kookeiland')) {
       insights.push({ icon: '\uD83C\uDFDD\uFE0F', text: 'Kookeiland' });
+    }
+
+    // Cv-ketel ouder dan 15 jaar: toon waarschuwings-chip
+    // Cv-ketel jonger dan 5 jaar op een woning ouder dan 5 jaar: toon positieve chip
+    for (const dt of dts) {
+      if ((dt.textContent || '').trim().toLowerCase() === 'cv-ketel') {
+        const dd = dt.nextElementSibling;
+        if (dd && dd.tagName === 'DD') {
+          const raw = (dd.textContent || '').trim();
+          const m = raw.match(/\buit\s+(\d{4})\b/i) || raw.match(/\bbouwjaar\s+(\d{4})\b/i) || raw.match(/\b(19\d{2}|20[01]\d)\b/);
+          if (m) {
+            const ketelJaar = parseInt(m[1], 10);
+            const nu = new Date().getFullYear();
+            const leeftijdKetel = nu - ketelJaar;
+            const leeftijdWoning = buildYear ? nu - parseInt(buildYear, 10) : null;
+            if (leeftijdKetel >= 15) {
+              insights.push({
+                icon: '\u26A0\uFE0F',
+                text: `Cv-ketel ${leeftijdKetel} jaar oud`,
+                chipStyle: 'background:#fff3e0;color:#b45309;border-color:#f59e0b',
+              });
+            } else if (leeftijdKetel < 3 && leeftijdWoning !== null && leeftijdWoning >= 3) {
+              insights.push({
+                icon: '🔥',
+                text: `Nieuwe ketel (${ketelJaar})`,
+              });
+            } else if (leeftijdKetel < 5 && leeftijdWoning !== null && leeftijdWoning >= 5) {
+              insights.push({
+                icon: '🔥',
+                text: `Recente ketel (${ketelJaar})`,
+              });
+            }
+          }
+        }
+        break;
+      }
     }
 
     return insights;
@@ -881,13 +911,30 @@
       }
     }
 
-    return { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: getCityFromPage(), isMonument, plotArea, vvePerMaand };
+    // Cv-ketel: zoek in de kenmerken-sectie naar bouwjaar van de ketel
+    // Patroon in Funda: dt "Cv-ketel" → dd "Nefit (gas gestookt combiketel uit 2004, eigendom)"
+    let cvKetelBouwjaar = null;
+    for (const dt of dts) {
+      const label = (dt.textContent || '').trim().toLowerCase();
+      if (label === 'cv-ketel') {
+        const dd = dt.nextElementSibling;
+        if (dd && dd.tagName === 'DD') {
+          const raw = (dd.textContent || '').trim();
+          // Zoek naar "uit YYYY" of "bouwjaar YYYY" of gewoon een 4-cijferig jaar
+          const m = raw.match(/\buit\s+(\d{4})\b/i) || raw.match(/\bbouwjaar\s+(\d{4})\b/i) || raw.match(/\b(19\d{2}|20[01]\d)\b/);
+          if (m) cvKetelBouwjaar = parseInt(m[1], 10);
+        }
+        break;
+      }
+    }
+
+    return { priceNum, livingArea, pricePerM2, energyLabel, buildYear, daysOnline, city: getCityFromPage(), isMonument, plotArea, vvePerMaand, cvKetelBouwjaar };
   }
 
   // wozData kan asynchroon meegegeven worden vanuit createPanel
   // zodat de whispers er gebruik van kunnen maken
   function enrichWhisperDataWithWoz(propertyData, wozData) {
-    if (!wozData || wozData.length === 0) return propertyData;
+    if (!wozData || wozData.length === 0) return propertyData; // cvKetelBouwjaar zit al in propertyData
     const latest = wozData[wozData.length - 1];
     const wozWaarde = latest.vastgesteldeWaarde;
     const wozJaar   = parseInt(latest.peildatum.slice(0, 4), 10);

@@ -126,12 +126,13 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 
 ### Toekomstige features
 
-- [ ] Aggregatie niveau "provincie" gebruiken?
 - [ ] Moderatie (rapporteer-knop, automatische spam-detectie)
 - [ ] Favorieten-monitoring — notificatie als er een reactie komt op je favoriet
 - [ ] Achtergrondjob die periodiek wijzigingen in vraagprijzen checkt voor favorieten van gebruikers
 - [ ] De mogelijkheid bieden om de huizen met de meeste 😍of 🏚️ te bekijken (per stad/hele land)
 - [ ] Het wijkgemiddelde moet eigen van de wijk-pagina komen, waar we nu ook de gemiddelde verkooptijd vandaan halen
+- [ ] Er is nu nog geen stadsgemiddelde, terwijl dat wel handig is bij weinig data!
+- [ ] Aggregatie niveau "provincie" gebruiken? Bijvoorbeeld voor een provinciegemiddelde 😬
 
 ---
 
