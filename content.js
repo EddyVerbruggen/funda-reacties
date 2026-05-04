@@ -799,6 +799,15 @@
       insights.push({ icon: '\uD83C\uDFDD\uFE0F', text: 'Kookeiland' });
     }
 
+    // Bioscoop: zoek in de woning-omschrijving
+    const omschrijvingEl = document.querySelector('[data-testid="object-description"]')
+      || document.querySelector('.object-description')
+      || document.querySelector('#description');
+    const omschrijvingText = (omschrijvingEl ? omschrijvingEl.innerText : allPageText).toLowerCase();
+    if (omschrijvingText.includes('bioscoop')) {
+      insights.push({ icon: '\uD83C\uDFAC', text: 'Thuisbios' });
+    }
+
     // Cv-ketel ouder dan 15 jaar: toon waarschuwings-chip
     // Cv-ketel jonger dan 5 jaar op een woning ouder dan 5 jaar: toon positieve chip
     for (const dt of dts) {
