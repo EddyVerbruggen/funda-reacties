@@ -621,6 +621,55 @@
       insights.push({ icon: '🏢', text: `VvE ${servicekostenBedrag}/mnd` });
     }
 
+    // Veranda / overkapping: zoek in de volledige paginatekst
+    const allPageText = (document.body.innerText || '').toLowerCase();
+    if (allPageText.includes('veranda') || allPageText.includes('overkapping')) {
+      insights.push({
+        icon: '__svg__',
+        svg: '<svg viewBox="0 0 22 18" xmlns="http://www.w3.org/2000/svg" width="16" height="16" style="display:inline-block;vertical-align:middle;margin-right:2px;margin-bottom:3px"><rect x="1" y="9" width="2.5" height="8" rx="0.5" fill="currentColor" opacity="0.7"/><rect x="18.5" y="4" width="2.5" height="13" rx="0.5" fill="currentColor" opacity="0.7"/><polygon points="0,9 22,4 22,6.5 0,11.5" fill="currentColor"/><rect x="0" y="16.5" width="22" height="1.5" rx="0.5" fill="currentColor" opacity="0.25"/></svg>',
+        text: 'Veranda',
+      });
+    }
+
+    // Zonnepanelen: eerst dt/dd, dan regex op bodytekst
+    (() => {
+      // Poging 1: kenmerken-DL (bijv. dt "Zonnepanelen" → dd "12 panelen" of gewoon "Ja")
+      let aantalPanelen = null;
+      for (const dt of dts) {
+        const label = (dt.textContent || '').trim().toLowerCase();
+        if (label === 'zonnepanelen' || label === 'aantal zonnepanelen') {
+          const dd = dt.nextElementSibling;
+          if (dd && dd.tagName === 'DD') {
+            const val = (dd.textContent || '').trim();
+            const m = val.match(/(\d+)/);
+            if (m) aantalPanelen = parseInt(m[1], 10);
+          }
+          break;
+        }
+      }
+      // Poging 2: regex op bodytekst — bijv. "12 zonnepanelen" of "zonnepanelen (8 stuks)"
+      const bodyText = document.body.innerText || '';
+      if (aantalPanelen === null) {
+        const m1 = bodyText.match(/(\d+)\s*zonnepanelen/i);
+        const m2 = bodyText.match(/zonnepanelen[^\d]{0,12}(\d+)/i);
+        if (m1) aantalPanelen = parseInt(m1[1], 10);
+        else if (m2) aantalPanelen = parseInt(m2[1], 10);
+      }
+      if (aantalPanelen === null && /zonnepanelen/i.test(bodyText)) aantalPanelen = 0;
+      if (aantalPanelen !== null) {
+        const label = aantalPanelen > 0 ? `${aantalPanelen} panelen` : 'Zonnepanelen';
+        insights.push({
+          icon: '☀️',
+          text: label,
+        });
+      }
+    })();
+
+    // Kookeiland: zoek in de volledige paginatekst
+    if (allPageText.includes('kookeiland')) {
+      insights.push({ icon: '\uD83C\uDFDD\uFE0F', text: 'Kookeiland' });
+    }
+
     return insights;
   }
 
@@ -914,7 +963,7 @@
         </div>
 
         <div class="fr-insights">
-          ${insights.map((i) => `<span class="fr-insight-chip"><span class="fr-insight-chip__icon">${i.icon}</span>${i.text}</span>`).join("")}
+          ${insights.map((i) => `<span class="fr-insight-chip"><span class="fr-insight-chip__icon">${i.svg ? i.svg : i.icon}</span>${i.text}</span>`).join("")}
           ${priceComparisonChip}
         </div>
 
@@ -1470,7 +1519,7 @@
   function buildSkeletonPlaceholder() {
     const insights = generateInsights();
     const insightsHtml = insights.length > 0
-      ? `<div class="fr-insights">${insights.map((i) => `<span class="fr-insight-chip"><span class="fr-insight-chip__icon">${i.icon}</span>${i.text}</span>`).join("")}</div>`
+      ? `<div class="fr-insights">${insights.map((i) => `<span class="fr-insight-chip"><span class="fr-insight-chip__icon">${i.svg ? i.svg : i.icon}</span>${i.text}</span>`).join("")}</div>`
       : "";
 
     const el = document.createElement("div");

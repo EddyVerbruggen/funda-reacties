@@ -131,7 +131,6 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 - [ ] Favorieten-monitoring — notificatie als er een reactie komt op je favoriet
 - [ ] Achtergrondjob die periodiek wijzigingen in vraagprijzen checkt voor favorieten van gebruikers
 - [ ] De mogelijkheid bieden om de huizen met de meeste 😍of 🏚️ te bekijken (per stad/hele land)
-- [ ] Dark mode
 
 ---
 
