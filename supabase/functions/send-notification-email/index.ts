@@ -1,5 +1,5 @@
 // Supabase Edge Function: send-notification-email
-// Versie: 0.8.6
+// Versie: 0.8.7
 //
 // Wordt aangeroepen door een Database Webhook bij elke INSERT in email_notifications.
 // Verstuurt een email via SendGrid en zet sent=true in de database.
@@ -29,11 +29,13 @@ interface WebhookPayload {
 
 interface EmailNotification {
   id: string;
-  reaction_type: "comment" | "emoji";
+  reaction_type: "comment" | "emoji" | "new_user";
   reactor_name?: string;
   reactor_email?: string;
   emoji?: string;
   comment_text?: string;
+  new_user_id?: string;
+  new_user_display_name?: string;
   property_address?: string;
   property_url?: string;
   sent: boolean;
@@ -43,6 +45,28 @@ function buildHtml(n: EmailNotification): string {
   const name    = n.reactor_name || "Anoniem";
   const address = n.property_address || "een woning";
   const url     = n.property_url || "https://www.funda.nl";
+
+  if (n.reaction_type === "new_user") {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+    <body style="font-family:sans-serif;color:#333;max-width:600px;margin:0 auto;padding:20px">
+      <h2 style="color:#e86c2a;border-bottom:2px solid #e86c2a;padding-bottom:8px">Funda Inzicht</h2>
+      <p>Hallo Eddy,</p>
+      <p>Er is een nieuwe gebruiker geregistreerd:</p>
+      <table style="margin:16px 0;border-collapse:collapse;width:100%">
+        <tr>
+          <td style="padding:8px 12px;background:#f5f5f5;font-weight:600;width:40%;border-radius:4px 0 0 4px;">User ID</td>
+          <td style="padding:8px 12px;background:#fef9f6;border-left:4px solid #e86c2a;font-family:monospace;font-size:13px;">${n.new_user_id}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;background:#f5f5f5;font-weight:600;">Naam</td>
+          <td style="padding:8px 12px;background:#fef9f6;border-left:4px solid #e86c2a;">${n.new_user_display_name || "(geen naam)"}</td>
+        </tr>
+      </table>
+      <p style="font-size:12px;color:#999;margin-top:24px;border-top:1px solid #eee;padding-top:12px;">
+        Monitor-notificatie van Funda Inzicht
+      </p>
+    </body></html>`;
+  }
 
   const reaction = n.reaction_type === "comment"
     ? `<blockquote style="background:#f5f5f5;padding:12px 16px;border-left:4px solid #e86c2a;margin:16px 0;border-radius:4px;font-style:italic;">
@@ -65,7 +89,9 @@ function buildHtml(n: EmailNotification): string {
 }
 
 async function sendEmail(n: EmailNotification) {
-  const subject = n.reaction_type === "comment"
+  const subject = n.reaction_type === "new_user"
+    ? `Nieuwe gebruiker: ${n.new_user_display_name || n.new_user_id}`
+    : n.reaction_type === "comment"
     ? `Nieuwe reactie op: ${n.property_address || "een woning"}`
     : `Nieuwe emoji op: ${n.property_address || "een woning"}`;
 

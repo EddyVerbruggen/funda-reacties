@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Funda Inzicht Database Schema
--- Supabase PostgreSQL — v1.4.3
+-- Supabase PostgreSQL — v1.6.3
 -- ============================================================================
 
 -- Enable UUID extension
@@ -16,9 +16,11 @@ DROP VIEW IF EXISTS emoji_counts;
 
 DROP TRIGGER IF EXISTS trigger_notify_on_comment   ON comments;
 DROP TRIGGER IF EXISTS trigger_notify_on_emoji     ON emoji_reactions;
+DROP TRIGGER IF EXISTS trigger_notify_on_new_user  ON users;
 DROP TRIGGER IF EXISTS update_properties_updated_at ON properties;
 
 DROP FUNCTION IF EXISTS notify_on_reaction();
+DROP FUNCTION IF EXISTS notify_on_new_user();
 DROP FUNCTION IF EXISTS update_updated_at_column();
 DROP FUNCTION IF EXISTS track_property_view(TEXT, TEXT, BOOLEAN, TEXT);
 DROP FUNCTION IF EXISTS migrate_anonymous_comments(TEXT, TEXT, TEXT);
@@ -299,12 +301,14 @@ GROUP BY property_id, emoji;
 CREATE TABLE IF NOT EXISTS email_notifications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   recipient_email TEXT NOT NULL,
-  reaction_type TEXT NOT NULL CHECK (reaction_type IN ('comment', 'emoji')),
+  reaction_type TEXT NOT NULL CHECK (reaction_type IN ('comment', 'emoji', 'new_user')),
   reactor_name TEXT,
   reactor_email TEXT,
   emoji TEXT,
   comment_text TEXT,
-  property_id TEXT NOT NULL REFERENCES properties(property_id) ON DELETE CASCADE,
+  new_user_id TEXT,
+  new_user_display_name TEXT,
+  property_id TEXT REFERENCES properties(property_id) ON DELETE CASCADE,
   property_address TEXT,
   property_url TEXT,
   sent BOOLEAN DEFAULT false,
@@ -456,6 +460,35 @@ DROP TRIGGER IF EXISTS trigger_notify_on_emoji ON emoji_reactions;
 CREATE TRIGGER trigger_notify_on_emoji
   AFTER INSERT ON emoji_reactions
   FOR EACH ROW EXECUTE FUNCTION notify_on_reaction();
+
+-- ============================================================================
+-- notify_on_new_user (v1.6.3)
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION notify_on_new_user()
+RETURNS TRIGGER AS $func$
+DECLARE
+  v_eddy_email TEXT := 'eddyverbruggen@gmail.com';
+BEGIN
+  INSERT INTO email_notifications (
+    recipient_email,
+    reaction_type,
+    new_user_id,
+    new_user_display_name
+  ) VALUES (
+    v_eddy_email,
+    'new_user',
+    NEW.user_id,
+    NEW.display_name
+  );
+  RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trigger_notify_on_new_user ON users;
+CREATE TRIGGER trigger_notify_on_new_user
+  AFTER INSERT ON users
+  FOR EACH ROW EXECUTE FUNCTION notify_on_new_user();
 
 -- ============================================================================
 -- track_property_view (v0.9.0)
