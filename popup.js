@@ -13,7 +13,11 @@
     }
   } else {
     statusEl.className = "popup__status popup__status--inactive";
-    statusEl.textContent = "🏠 Ga naar funda.nl om reacties te bekijken.";
+    statusEl.innerHTML = '🏠 Ga naar <a id="funda-link" href="https://www.funda.nl" style="color:inherit;font-weight:700;text-decoration:underline;cursor:pointer">funda.nl</a> om reacties te bekijken.';
+    document.getElementById('funda-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.tabs.create({ url: 'https://www.funda.nl' });
+    });
   }
 
   // ---- Profiel laden en tonen ----
