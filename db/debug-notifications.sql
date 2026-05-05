@@ -52,7 +52,17 @@ ORDER BY created_at DESC;
 -- ----------------------------------------------------------------------------
 
 -- ----------------------------------------------------------------------------
--- STAP 6: Edge Function direct aanroepen via curl (in je terminal)
+-- STAP 6: Webhook controleren / aanmaken in Supabase Dashboard
+-- ----------------------------------------------------------------------------
+-- Ga naar: Database → Webhooks → Create a new hook
+-- Name:        notify_eddy_on_reaction
+-- Table:       email_notifications
+-- Events:      INSERT
+-- Type:        Supabase Edge Functions
+-- Function:    send-notification-email
+
+-- ----------------------------------------------------------------------------
+-- STAP 7: Edge Function direct aanroepen via curl (in je terminal)
 -- Vervang PROJECT_REF en ANON_KEY met je eigen waarden
 -- ----------------------------------------------------------------------------
 -- curl -X POST \
@@ -78,7 +88,7 @@ ORDER BY created_at DESC;
 -- Als je een error krijgt, staat de oorzaak in de response
 
 -- ----------------------------------------------------------------------------
--- STAP 7: Opruimen testdata
+-- STAP 8: Opruimen testdata
 -- ----------------------------------------------------------------------------
 -- DELETE FROM comments        WHERE user_id = 'user_debug_test';
 -- DELETE FROM email_notifications WHERE reactor_name = 'Debug Persoon';
