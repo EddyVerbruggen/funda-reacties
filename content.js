@@ -811,8 +811,23 @@
     if (omschrijvingText.includes('bioscoop')) {
       insights.push({ icon: '\uD83C\uDFAC', text: 'Thuisbios' });
     }
+
+    // Zwembad: alleen tonen als het in de woning zelf is, niet in de omgeving.
+    // Split op zinnen en check of een zin met 'zwembad' ook externe context-woorden bevat.
     if (omschrijvingText.includes('zwembad')) {
-      insights.push({ icon: '\uD83C\uDFCA', text: 'Zwembad' });
+      const OMGEVING_WOORDEN = [
+        'omgeving', 'buurt', 'nabijheid', 'op loopafstand', 'vlakbij', 'dichtbij', 'op fietsafstand',
+        'bereikbaar', 'wandelafstand', 'minuten'
+      ];
+      const zinnen = omschrijvingText.split(/(?<=[.!?])\s+/);
+      const heeftEigenZwembad = zinnen.some(zin => {
+        if (!zin.includes('zwembad')) return false;
+        // Als de zin externe context-woorden bevat, is het waarschijnlijk buiten de woning
+        return !OMGEVING_WOORDEN.some(woord => zin.includes(woord));
+      });
+      if (heeftEigenZwembad) {
+        insights.push({ icon: '\uD83C\uDFCA', text: 'Zwembad' });
+      }
     }
     if (omschrijvingText.includes('sauna')) {
       insights.push({ icon: '\uD83E\uDDD6', text: 'Sauna' });

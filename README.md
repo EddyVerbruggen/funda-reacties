@@ -132,6 +132,7 @@ Data wordt opgeslagen in een Supabase PostgreSQL database:
 - [ ] De mogelijkheid bieden om de huizen met de meeste 😍of 🏚️ te bekijken (per stad/hele land)
 - [ ] Het wijkgemiddelde moet eigen van de wijk-pagina komen, waar we nu ook de gemiddelde verkooptijd vandaan halen
 - [ ] Aggregatie niveau "provincie" gebruiken? Bijvoorbeeld voor een provinciegemiddelde 😬
+- [ ] "Huizen met een zwembad/sauna/garage in de buurt"
 
 ---
 
