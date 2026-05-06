@@ -1,5 +1,5 @@
 // Supabase Edge Function: send-notification-email
-// Versie: 0.8.7
+// Versie: 0.8.8
 //
 // Wordt aangeroepen door een Database Webhook bij elke INSERT in email_notifications.
 // Verstuurt een email via SendGrid en zet sent=true in de database.
@@ -89,11 +89,11 @@ function buildHtml(n: EmailNotification): string {
 }
 
 async function sendEmail(n: EmailNotification) {
-  const subject = n.reaction_type === "new_user"
+  const subject = "[Funda Inzicht] " + (n.reaction_type === "new_user"
     ? `Nieuwe gebruiker: ${n.new_user_display_name || n.new_user_id}`
     : n.reaction_type === "comment"
     ? `Nieuwe reactie op: ${n.property_address || "een woning"}`
-    : `Nieuwe emoji op: ${n.property_address || "een woning"}`;
+    : `Nieuwe emoji op: ${n.property_address || "een woning"}`);
 
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",

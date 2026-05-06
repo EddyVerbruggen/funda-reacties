@@ -1164,7 +1164,7 @@
 
         <div class="fr-quick-reactions" id="fr-emoji-bar">
           ${Object.entries(data.emojis).map(([emoji, info]) => `
-            <button class="fr-emoji-btn ${info.active ? "active" : ""}" data-emoji="${emoji}" title="${EMOJI_LABELS[emoji] || emoji}">
+            <button class="fr-emoji-btn ${info.active ? "active" : ""}" data-emoji="${emoji}"${EMOJI_LABELS[emoji] ? ` title="${EMOJI_LABELS[emoji]}"` : ''}>
               ${emoji}<span class="fr-emoji-btn__count">${info.count || ""}</span>
             </button>`).join("")}
           <button class="fr-emoji-btn fr-emoji-btn--add" id="fr-add-emoji-btn" title="Emoji toevoegen">
@@ -1439,7 +1439,7 @@
     if (!bar) return;
     bar.innerHTML = `
       ${Object.entries(emojis).map(([emoji, info]) => `
-        <button class="fr-emoji-btn ${info.active ? "active" : ""}" data-emoji="${emoji}" title="${EMOJI_LABELS[emoji] || emoji}">
+        <button class="fr-emoji-btn ${info.active ? "active" : ""}" data-emoji="${emoji}"${EMOJI_LABELS[emoji] ? ` title="${EMOJI_LABELS[emoji]}"` : ''}>
           ${emoji}<span class="fr-emoji-btn__count">${info.count || ""}</span>
         </button>`).join("")}
       <button class="fr-emoji-btn fr-emoji-btn--add" id="fr-add-emoji-btn" title="Emoji toevoegen"><span class="fr-emoji-btn--add__plus">+</span></button>
