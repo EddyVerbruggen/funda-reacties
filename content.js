@@ -171,6 +171,30 @@
     return cleanPriceText(raw);
   }
 
+  /**
+   * Bepaalt het prijsbeding van de woning: 'von' (vrij op naam, nieuwbouw)
+   * of 'kk' (kosten koper, bestaande bouw — default).
+   */
+  function getPriceCondition() {
+    // 1. Check de ruwe prijs-tekst op v.o.n.- of k.k.-suffix
+    const dts = document.querySelectorAll('dt');
+    for (const dt of dts) {
+      const label = (dt.textContent || '').trim().toLowerCase();
+      if (label.endsWith('vraagprijs') || label === 'prijs') {
+        const dd = dt.nextElementSibling;
+        if (dd && dd.tagName === 'DD') {
+          const txt = (dd.textContent || '').toLowerCase();
+          if (txt.includes('v.o.n.') || txt.includes('vrij op naam')) return 'von';
+          if (txt.includes('k.k.') || txt.includes('kosten koper')) return 'kk';
+        }
+      }
+    }
+    // 2. Funda URL voor nieuwbouwprojecten bevat /nieuwbouw/
+    if (/\/nieuwbouw\//i.test(location.pathname)) return 'von';
+    // 3. Default — bestaande bouw
+    return 'kk';
+  }
+
   function parsePrice(priceStr) {
     if (!priceStr) return null;
     const num = parseInt(priceStr.replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", "."), 10);
@@ -672,7 +696,106 @@
     }
 
     const buildYear = findDd("bouwjaar");
-    if (buildYear && /^\d{4}$/.test(buildYear)) insights.push({ icon: "🏗️", text: buildYear });
+    // De Bouwjaar-DD kan extra info bevatten zoals "1903 (gerenoveerd in 1977, 1991 en 2002)".
+    // Pak het bouwjaar uit de leading 4 cijfers en bewaar de hele tekst voor reno-detectie.
+    const buildYearLeading = buildYear ? buildYear.match(/^(\d{4})/) : null;
+    if (buildYearLeading) {
+      const bouwjaarStr = buildYearLeading[1];
+      insights.push({ icon: "🏗️", text: bouwjaarStr });
+
+      // Bouwjaar-risico chips: signaleer bekende bouwperiode-risico's voor kopers.
+      // ≤ 1945            → houten fundering (paalrot bekend in NL grote steden)
+      // 1946 – 1959        → loodleidingen mogelijk
+      // 1960 – 1994        → asbestrisico (toepassing tot wettelijk verbod 1994)
+      // 1965 – 1985        → betonrot-tijdvak (kalkzandsteen én breedplaatvloeren)
+      // ≥ 2010            → moderne bouwnormen (Bouwbesluit + strengere isolatie)
+      const yr = parseInt(bouwjaarStr, 10);
+      const RISK_STYLE = 'background:#fff3e0;color:#b45309;border-color:#f59e0b';
+      const POS_STYLE  = 'background:#e6f4ec;color:#1f5c38;border-color:#b8dfc8';
+      if (yr <= 1945) {
+        insights.push({ icon: '🪵', text: 'Houten fundering?', chipStyle: RISK_STYLE });
+      } else if (yr <= 1959) {
+        insights.push({ icon: '🚰', text: 'Mogelijk loodleidingen', chipStyle: RISK_STYLE });
+      } else if (yr <= 1994) {
+        insights.push({ icon: '⚠️', text: 'Asbestrisico', chipStyle: RISK_STYLE });
+        if (yr >= 1965 && yr <= 1985) {
+          insights.push({ icon: '🧱', text: 'Betonrot-tijdvak', chipStyle: RISK_STYLE });
+        }
+      } else if (yr >= 2010) {
+        insights.push({ icon: '✅', text: 'Moderne bouwnormen', chipStyle: POS_STYLE });
+      }
+    }
+
+    // --- Renovatiejaar uit de woning-omschrijving + bouwjaar-DD ---
+    // Dekt o.a. "gerenoveerd in 2015", "In 2005 volledig gerenoveerd en geïsoleerd",
+    // "renovatie 2018", "verbouwd in 2020", "in 1995 is deze woning grondig verbouwd",
+    // "Bouwjaar: 1903 (gerenoveerd in 1977, 1991 en 2002)".
+    // Bij meerdere renovatiejaren wordt het meest recente getoond.
+    {
+      const descEl = document.querySelector('[data-testid="object-description"]')
+        || document.querySelector('.object-description')
+        || document.querySelector('#description');
+      const descText = (descEl ? descEl.innerText : document.body.innerText || '').toLowerCase();
+      // De Bouwjaar-DD bevat soms een lijst met renovatiejaren tussen haakjes — die nemen we mee.
+      const corpus = ((buildYear || '') + ' ' + descText).toLowerCase();
+      const nu = new Date().getFullYear();
+      let renoYear = null;
+
+      // Patroon A: "gerenoveerd/verbouwd/renovatie [in] YYYY[, YYYY[, en YYYY ...]]"
+      //   dekt: "gerenoveerd in 1977, 1991 en 2002", "gerenoveerd in 2015"
+      const reA = /(?:gerenoveerd|verbouwd|renovatie)\s+(?:in\s+)?((?:\d{4}(?:\s*(?:,|en|of|&|-|\/)\s*)?)+)/gi;
+      // Patroon B: "[in] YYYY [tot 4 woorden] gerenoveerd|verbouwd"
+      //   dekt: "in 2005 volledig gerenoveerd", "in 1995 is deze woning grondig verbouwd"
+      const reB = /\b(?:in\s+)?(\d{4})\s+(?:\S+\s+){0,4}?(?:gerenoveerd|verbouwd)\b/gi;
+
+      // Pattern A geeft een lijst van jaren in m[1]; extraheer alle losse jaren daaruit.
+      let mA;
+      while ((mA = reA.exec(corpus)) !== null) {
+        const years = mA[1].match(/\d{4}/g) || [];
+        for (const ys of years) {
+          const yr = parseInt(ys, 10);
+          if (yr >= 1970 && yr <= nu && (!renoYear || yr > renoYear)) renoYear = yr;
+        }
+      }
+      // Pattern B levert één jaar per match.
+      let mB;
+      while ((mB = reB.exec(corpus)) !== null) {
+        const yr = parseInt(mB[1], 10);
+        if (yr >= 1970 && yr <= nu && (!renoYear || yr > renoYear)) renoYear = yr;
+      }
+
+      if (renoYear) {
+        const bouwjaar = buildYearLeading ? parseInt(buildYearLeading[1], 10) : null;
+        // Sla over als reno-jaar binnen 3 jaar van bouwjaar valt — dan is het feitelijk geen renovatie
+        if (!bouwjaar || renoYear > bouwjaar + 3) {
+          const leeftijdReno = nu - renoYear;
+          const RENO_STYLE = 'background:#e6f4ec;color:#1f5c38;border-color:#b8dfc8';
+          insights.push({
+            icon: '✨',
+            text: leeftijdReno <= 5 ? `Recent gerenoveerd (${renoYear})` : `Gerenoveerd in ${renoYear}`,
+            chipStyle: RENO_STYLE,
+          });
+        }
+      }
+    }
+
+    // --- Monument-chip ---
+    // Detecteer monumentale status via Funda's "Specifiek"-kenmerk ("Monumentaal pand")
+    // en/of het woord "monument"/"monumentaal" in de woning-omschrijving.
+    // 'monumentaal' bevat 'monument' als prefix, dus één substring-check dekt beide.
+    {
+      const specifiekRaw = (findDd('specifiek') || '').toLowerCase();
+      // Gebruik de volledige paginatekst: "Monumentstatus: gemeentelijk monument" kan
+      // als bullet in de omschrijving staan of elders op de pagina (kenmerken, header).
+      const pageText = (document.body.innerText || '').toLowerCase();
+      const corpus = specifiekRaw + ' ' + pageText;
+      if (corpus.includes('monument')) {
+        let label = 'Monument';
+        if (corpus.includes('rijksmonument')) label = 'Rijksmonument';
+        else if (corpus.includes('gemeentemonument') || corpus.includes('gemeentelijk monument')) label = 'Gemeentemonument';
+        insights.push({ icon: '🏛️', text: label });
+      }
+    }
 
     const badkamersRaw = findDd('aantal badkamers');
     if (badkamersRaw) {
@@ -1116,6 +1239,7 @@
         : Promise.resolve({ avgSaleDays: null, lastFetchedAt: null }),
     ]);
     const priceComparisonChip  = renderPriceComparisonChip(priceComparison);
+    const kostenKoperBarHtml   = renderKostenKoperBar();
     const wozChartHtml         = renderWozChart(wozData, data.priceHistory, cityWozGrowth);
     // Toon het "al x dagen online" blokje alleen als de woning nog niet verkocht/verhuurd is.
     // Controleer zowel de URL (voor woningen met een statussegment) als het Status-veld
@@ -1184,6 +1308,7 @@
 
         ${priceComparisonChip}
         ${priceChangeBanner}
+        ${kostenKoperBarHtml}
         ${streetSaleInsightHtml}
         ${wozChartHtml}
 
@@ -1274,6 +1399,78 @@
     return `<div class="fr-price-comparison ${cls}">
       <span class="fr-price-comparison__icon">${icon}</span>
       <span class="fr-price-comparison__text">${escapeHtml(label)}${escapeHtml(detail)}</span>
+    </div>`;
+  }
+
+  /**
+   * Rendert een Kosten Koper-bar: schat de totale bijkomende kosten en de
+   * totale instapprijs (vraagprijs + KK). Gaat uit van het scenario eigen
+   * bewoning (2% overdrachtsbelasting). Tarieven en kostenposten zijn 2026.
+   *
+   * Bronnen voor de aannames:
+   *   • Overdrachtsbelasting 2% — Rijksoverheid (eigen woning, 35+)
+   *   • Startersgrens € 555.000 — Belastingdienst 2026
+   *   • Notaris (leverings- + hypotheekakte) ~€ 1.700 — NN/HomeFinance
+   *   • Taxatie ~€ 750 — ABN AMRO
+   *   • Hypotheek- en financieel advies ~€ 2.500 — marktgemiddelde
+   *   • Kadaster ~€ 100 — vast tarief
+   */
+  function renderKostenKoperBar() {
+    const priceNum = parsePrice(getAskingPrice());
+    if (!priceNum || priceNum <= 0) return '';
+
+    // Niet tonen op verkochte/verhuurde woningen — dan is KK niet meer relevant.
+    const isSoldByUrl = location.pathname.split('/').some(seg => FUNDA_URL_STATUS_SEGMENTS.has(seg));
+    if (isSoldByUrl) return '';
+
+    const fmt = (n) => '€\u00a0' + Math.round(n).toLocaleString('nl-NL');
+    const condition = getPriceCondition();
+
+    if (condition === 'von') {
+      // Nieuwbouw / vrij op naam — andere kostenstructuur:
+      // GEEN overdrachtsbelasting (btw zit in v.o.n.-prijs), GEEN taxatie (niet vereist bij nieuwbouw),
+      // WEL hypotheekakte (leveringsakte zit in v.o.n.), opleveringskeuring, en variabele bouwrente + meerwerk.
+      const NOTARIS_HYP   = 800;    // alleen hypotheekakte
+      const KADASTER_VON  = 100;
+      const ADVIES_VON    = 2500;
+      const OPLEVKEURING  = 400;
+      const VASTE_VON     = NOTARIS_HYP + KADASTER_VON + ADVIES_VON + OPLEVKEURING;
+      return `<div class="fr-kosten-koper fr-kosten-koper--von">
+        <span class="fr-kosten-koper__icon">🏗️</span>
+        <div class="fr-kosten-koper__text">
+          <div class="fr-kosten-koper__main"><strong>Nieuwbouw v.o.n.</strong> — vaste bijkomende kosten ≈ ${escapeHtml(fmt(VASTE_VON))}</div>
+          <div class="fr-kosten-koper__detail">Hypotheekakte, kadaster, hypotheekadvies &amp; opleveringskeuring. Geen overdrachtsbelasting (btw zit in de prijs) en geen taxatie nodig.</div>
+          <div class="fr-kosten-koper__variable">⚠️ Reken óók op <strong>bouwrente</strong> (4–8% over al gerealiseerd deel) en <strong>meerwerk</strong> (keuken, badkamer, uitbouw, tuinaanleg) — sterk projectafhankelijk.</div>
+        </div>
+      </div>`;
+    }
+
+    // --- Bestaande bouw / kosten koper ---
+    // Tarieven & vaste kostenposten 2026
+    const STARTER_GRENS  = 555000;
+    const TARIEF_EIGENW  = 0.02;       // 2% overdrachtsbelasting
+    const NOTARIS        = 1700;       // leverings- + hypotheekakte
+    const TAXATIE        = 750;
+    const ADVIES         = 2500;       // hypotheek- en financieel advies
+    const KADASTER       = 100;
+    const VASTE_KOSTEN   = NOTARIS + TAXATIE + ADVIES + KADASTER;
+
+    const overdracht    = Math.round(priceNum * TARIEF_EIGENW);
+    const totaalKK      = overdracht + VASTE_KOSTEN;
+    const totaalInstap  = priceNum + totaalKK;
+    const pctVanPrijs   = (totaalKK / priceNum * 100).toFixed(1).replace('.', ',');
+
+    const starterHint = priceNum <= STARTER_GRENS
+      ? `<div class="fr-kosten-koper__starter">💡 Starter (18–35, eerste eigen woning)? Geen overdrachtsbelasting — bespaart ${escapeHtml(fmt(overdracht))}.</div>`
+      : '';
+
+    return `<div class="fr-kosten-koper">
+      <span class="fr-kosten-koper__icon">💶</span>
+      <div class="fr-kosten-koper__text">
+        <div class="fr-kosten-koper__main"><strong>Kosten koper ≈ ${escapeHtml(fmt(totaalKK))}</strong> (${escapeHtml(pctVanPrijs)}%) · totale instapprijs ${escapeHtml(fmt(totaalInstap))}</div>
+        <div class="fr-kosten-koper__detail">Overdrachtsbelasting 2% (${escapeHtml(fmt(overdracht))}) + notaris, taxatie & advies (≈ ${escapeHtml(fmt(VASTE_KOSTEN))})</div>
+        ${starterHint}
+      </div>
     </div>`;
   }
 
